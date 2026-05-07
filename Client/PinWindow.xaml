@@ -1,0 +1,15 @@
+<Window x:Class="BayMax.PinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:BayMax"
+        mc:Ignorable="d"
+        Title="Авторизация" Height="150" Width="300" 
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" WindowStyle="ToolWindow">
+    <StackPanel Margin="20">
+        <TextBlock Text="Введите PIN-код для этого устройства:" TextAlignment="Center" FontWeight="Bold"/>
+        <PasswordBox x:Name="PinInput" Height="30" VerticalContentAlignment="Center" FontSize="16"/>
+        <Button Content="Подключиться" Click="Ok_Click" IsDefault="True" Height="30"/>
+    </StackPanel>
+</Window>

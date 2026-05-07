@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.idea/
+
+.secrets/
+*.key
+
+bin/
+obj/
+.vs/
+*.user
