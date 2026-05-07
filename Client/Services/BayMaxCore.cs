@@ -6,20 +6,10 @@ using System.Text;
 using System.Text.Json;
 using System.Web;
 using System.Xml.Serialization;
+using BayMax.Models;
 
 namespace BayMax.Services
 {
-
-    public class Device
-    {
-        public string Name { get; set; }
-        public string Ip { get; set; }
-        public int Port { get; set; }
-        public string PublicKey { get; set; }
-        public bool IsConnected { get; set; }
-        public string DisplayName => $"{Name} ({Ip}) {(IsConnected ? "●" : "")}";
-    }
-
     public class BayMaxCore
     {
         private readonly DiscoveryService _discovery;
@@ -55,13 +45,45 @@ namespace BayMax.Services
             };
         }
 
-        public void StartLocalAgent(string pythonPath, string scriptPath)
+        public void StartLocalAgent()
         {
             LoggerService.Log("Запуск локального агента...");
+
+            var (pythonPath, scriptPath) = ResolvePythonPaths();
+
             _localAgent.StartAgent(pythonPath, scriptPath, 5000, AppPublicKey);
         }
 
-        public async Task ScanNetworkAsync(int timeoutSeconds = 3) 
+        private (string pythonExe, string agentScript) ResolvePythonPaths()
+        {
+            string currentDir = AppDomain.CurrentDomain.BaseDirectory;
+            string targetDir = null;
+
+            while (currentDir != null)
+            {
+                string potentialPythonDir = System.IO.Path.Combine(currentDir, "Agent");
+
+                if (System.IO.Directory.Exists(potentialPythonDir))
+                {
+                    targetDir = potentialPythonDir;
+                    break;
+                }
+
+                currentDir = System.IO.Directory.GetParent(currentDir)?.FullName;
+            }
+
+            if (targetDir == null)
+            {
+                LoggerService.Log("Не удалось найти корневую папку 'python' с агентом!");
+            }
+
+            string pythonPath = System.IO.Path.Combine(targetDir, ".venv", "Scripts", "python.exe");
+            string scriptPath = System.IO.Path.Combine(targetDir, "agent.py");
+
+            return (pythonPath, scriptPath);
+        }
+
+        public async Task ScanNetworkAsync(double timeoutSeconds = 0.6) 
         {
             LoggerService.Log($"Начинаю поиск устройств ({timeoutSeconds} сек)...");
             AvailableDevices.Clear();

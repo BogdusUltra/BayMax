@@ -111,7 +111,7 @@ class BayMaxAgent:
                 udp_socket.sendto(payload, ('<broadcast>' if self.mode == "global" else "127.0.0.1", self.broadcast_port))
             except Exception:
                 pass
-            time.sleep(2)
+            time.sleep(0.5)
 
     def stop_current_project(self):
         """Мягкая остановка всех запущенных нод"""
