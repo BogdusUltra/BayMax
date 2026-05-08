@@ -20,18 +20,31 @@ namespace BayMax
     public partial class MainWindow : Window
     {
 
-        private readonly BayMaxCore _core;
+        public BayMaxCore Core;
+
+        public NodeManager NodeManager { get; } = new NodeManager();
+
+        public UINetworkBridge UIBridge { get; } = new UINetworkBridge();
 
 
         public MainWindow()
         {
-            BayMax.Nodes.NodeRegistry.Initialize();
             InitializeComponent();
+        
             TopMenu.BindCanvas(MainEditor);
 
-            _core = new BayMaxCore();
+            Nodes.NodeRegistry.Initialize();
 
-            this.DataContext = _core;
+            Core = new BayMaxCore();
+
+            TopMenu.BindCore(Core);
+
+            Task.Run(() =>
+            {
+                NodeManager.LoadNodes();
+            });
+
+            this.DataContext = Core;
 
             
 
@@ -55,37 +68,37 @@ namespace BayMax
         //    });
         //}
 
-        private async void StartLocal_Click(object sender, RoutedEventArgs e)
-        {
-            // 1. Запустили
-            _core.StartLocalAgent();
+        //private async void StartLocal_Click(object sender, RoutedEventArgs e)
+        //{
+        //    // 1. Запустили
+        //    Core.StartLocalAgent();
 
-            // 2. Подождали 2 секунды, пока Питон поднимется и отправит маяки
-            await _core.ScanNetworkAsync(timeoutSeconds: 0.6);
+        //    // 2. Подождали 2 секунды, пока Питон поднимется и отправит маяки
+        //    await Core.ScanNetworkAsync(timeoutSeconds: 0.6);
 
-            // 3. Нашли его в списке
-            var localDevice = _core.AvailableDevices.FirstOrDefault(d => d.Ip == "127.0.0.1");
+        //    // 3. Нашли его в списке
+        //    var localDevice = Core.AvailableDevices.FirstOrDefault(d => d.Ip == "127.0.0.1");
 
-            // 4. Подключились умным коннектом
-            if (localDevice != null)
-            {
-                bool authorized = await _core.IsAlreadyAuthorizedAsync(localDevice);
+        //    // 4. Подключились умным коннектом
+        //    if (localDevice != null)
+        //    {
+        //        bool authorized = await Core.IsAlreadyAuthorizedAsync(localDevice);
 
-                if (authorized)
-                {
-                    localDevice.IsConnected = true;
-                    LoggerService.Log("Бесшовное подключение к локальному агенту прошло успешно!", LogLevel.Success);
-                }
-                else
-                {
-                    LoggerService.Log("Странно, локальный агент не узнал наш ключ и требует PIN.", LogLevel.Error);
-                }
-            }
-            else
-            {
-                LoggerService.Log("Локальный агент не ответил на радар за отведенное время.", LogLevel.Warning);
-            }
-        }
+        //        if (authorized)
+        //        {
+        //            localDevice.IsAuthorized = true;
+        //            LoggerService.Log("Бесшовное подключение к локальному агенту прошло успешно!", LogLevel.Success);
+        //        }
+        //        else
+        //        {
+        //            LoggerService.Log("Странно, локальный агент не узнал наш ключ и требует PIN.", LogLevel.Error);
+        //        }
+        //    }
+        //    else
+        //    {
+        //        LoggerService.Log("Локальный агент не ответил на радар за отведенное время.", LogLevel.Warning);
+        //    }
+        //}
 
         //private void Refresh_Click(object sender, RoutedEventArgs e) => _core.ScanNetworkAsync();
 
@@ -132,7 +145,8 @@ namespace BayMax
 
         protected override void OnClosed(EventArgs e)
         {
-            _core.Shutdown();
+            UIBridge.Stop();
+            Core.Shutdown();
             base.OnClosed(e);
             Environment.Exit(0);
         }

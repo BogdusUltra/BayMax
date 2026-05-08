@@ -6,10 +6,10 @@
              mc:Ignorable="d" 
              d:DesignHeight="20" d:DesignWidth="80">
 
-    <StackPanel x:Name="PinContainer" Orientation="Horizontal" VerticalAlignment="Center" Height="14">
+    <StackPanel x:Name="PinContainer" Orientation="Horizontal" VerticalAlignment="Center" Height="20">
 
         <Ellipse x:Name="PinCircle" 
-                 Width="12" Height="12" 
+                 Width="16" Height="16" 
                  Fill="#808080" Stroke="Black" StrokeThickness="1"
                  Cursor="Hand" MouseLeftButtonDown="PinCircle_MouseLeftButtonDown"/>
 

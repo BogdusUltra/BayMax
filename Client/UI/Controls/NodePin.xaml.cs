@@ -1,5 +1,4 @@
-﻿using BayMax.Nodes;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Text;
@@ -17,6 +16,11 @@ namespace BayMax.UI.Controls
         public PinDataType DataType { get; private set; }
         public string Title { get; private set; }
 
+        public string Id { get; } = Guid.NewGuid().ToString("N");
+
+        public NodeBlock ParentNode => this.FindParent<NodeBlock>();
+
+        public int ConnectionCount { get; private set; } = 0;
         public Ellipse PinDot => PinCircle;
 
         public object DataValue { get; private set; }
@@ -32,21 +36,72 @@ namespace BayMax.UI.Controls
             DataType = dataType;
             Title = title;
 
-            PinTitle.Text = Title;
-
-            PinDot.Fill = DataTypeColors.GetColor(dataType);
-            PinDot.Stroke = DataTypeColors.GetColor(dataType);
-
-            if (type == PinType.Output)
+            PinContainer.Children.Clear();
+            if (Type == PinType.Output)
             {
-                PinContainer.Children.Remove(PinCircle);
-                PinContainer.Children.Add(PinCircle);
-
-                PinContainer.HorizontalAlignment = HorizontalAlignment.Right;
+                PinContainer.Children.Add(PinTitle);
+                PinContainer.Children.Add(PinDot);
+                PinTitle.Margin = new Thickness(0, 0, 5, 0);
             }
             else
             {
-                PinContainer.HorizontalAlignment = HorizontalAlignment.Left;
+                PinContainer.Children.Add(PinDot);
+                PinContainer.Children.Add(PinTitle);
+                PinTitle.Margin = new Thickness(5, 0, 0, 0);
+            }
+
+            PinTitle.Text = Title;
+
+            UpdateVisuals();
+        }
+
+        public void AddConnection()
+        {
+            ConnectionCount++;
+            UpdateVisuals();
+        }
+
+        public void RemoveConnection()
+        {
+            ConnectionCount--;
+            if (ConnectionCount < 0) ConnectionCount = 0;
+            UpdateVisuals();
+        }
+
+        private void UpdateVisuals()
+        {
+            bool isConnected = ConnectionCount > 0;
+
+            Color baseColor = DataTypeColors.GetBaseColor(DataType);
+            Color brightColor = DataTypeColors.GetBrightColor(DataType);
+
+            if (Type == PinType.Input)
+            {
+                if (isConnected)
+                {
+                    PinDot.Fill = new SolidColorBrush(brightColor);
+                    PinDot.Stroke = new SolidColorBrush(brightColor);
+                    PinDot.StrokeThickness = 0;
+                }
+                else
+                {
+                    PinDot.Fill = new SolidColorBrush(Color.FromRgb(45, 45, 48));
+                    PinDot.Stroke = new SolidColorBrush(baseColor);
+                    PinDot.StrokeThickness = 3;
+                }
+            }
+            else
+            {
+                if (isConnected)
+                {
+                    PinDot.Fill = new SolidColorBrush(brightColor);
+                    PinDot.Stroke = new SolidColorBrush(brightColor);
+                }
+                else
+                {
+                    PinDot.Fill = new SolidColorBrush(baseColor);
+                    PinDot.Stroke = new SolidColorBrush(baseColor);
+                }
             }
         }
 
@@ -55,7 +110,7 @@ namespace BayMax.UI.Controls
             DataValue = newValue;
             ValueChanged?.Invoke(newValue);
         }
-
+        
         private void PinCircle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             var parent = VisualTreeHelper.GetParent(this);

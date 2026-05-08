@@ -10,6 +10,12 @@ using BayMax.Models;
 
 namespace BayMax.Services
 {
+    public enum ConnectionStatus
+    {
+        Authorized,
+        Unauthorized,
+        Offline
+    }
     public class BayMaxCore
     {
         private readonly DiscoveryService _discovery;
@@ -19,9 +25,11 @@ namespace BayMax.Services
         private readonly Dictionary<string, BayMaxClient> _activeConnections = new Dictionary<string, BayMaxClient>();
 
         public ObservableCollection<Device> AvailableDevices { get; } = new ObservableCollection<Device>();
+        public ObservableCollection<Device> ProjectDevices { get; } = new ObservableCollection<Device>();
+        private bool _isRunning = true;
         public string AppPublicKey => Convert.ToBase64String(_security.Certificate.PublicKey);
 
-        public event Action<string> OnDeviceReady;
+        public event Action<string> OnDeviceReady;   
 
         public BayMaxCore()
         {
@@ -29,56 +37,165 @@ namespace BayMax.Services
             _discovery = new DiscoveryService();
             _localAgent = new LocalAgentManager();
 
-            _discovery.OnDeviceDiscovered += (beacon, ip) => {
-                System.Windows.Application.Current.Dispatcher.Invoke(() => {
-                    if (!AvailableDevices.Any(d => d.Ip == ip))
+            _discovery.OnDeviceDiscovered += OnAgentDiscovered;
+
+            _discovery.Start();
+            Task.Run(HeartbeatLoop);
+        }
+
+        private void OnAgentDiscovered(DiscoveryService.AgentBeacon beacon, string ip)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                var device = AvailableDevices.FirstOrDefault(d => d.Ip == ip);
+
+                if (device != null)
+                {
+                    device.LastSeen = DateTime.Now; 
+
+                    if (device.PublicKey != beacon.public_key || device.Port != beacon.zmq_port)
                     {
-                        AvailableDevices.Add(new Device
+                        LoggerService.Log($"[БЕЗОПАСНОСТЬ] Агент {device.Name} сменил ключи или порт!", LogLevel.Warning);
+
+                        device.PublicKey = beacon.public_key;
+                        device.Port = beacon.zmq_port;
+                        device.IsAuthorized = false;
+
+                        if (device.IsInProject)
                         {
-                            Name = beacon.agent_name,
-                            Ip = ip,
-                            Port = beacon.zmq_port,
-                            PublicKey = beacon.public_key
-                        });
+                            device.IsInProject = false;
+                            ProjectDevices.Remove(device);
+                        }
+
+                        DisconnectDevice(ip);
+                        SortAvailableDevices();
                     }
-                });
-            };
+                }
+                else
+                {
+                    device = new Device
+                    {
+                        Name = beacon.agent_name,
+                        Ip = ip,
+                        Port = beacon.zmq_port,
+                        PublicKey = beacon.public_key
+                    };
+
+                    AvailableDevices.Add(device);
+
+                    Task.Run(async () =>
+                    {
+                        var status = await CheckConnectionStatusAsync(device);
+
+                        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            if (status == ConnectionStatus.Offline)
+                            {
+                                AvailableDevices.Remove(device);
+                                DisconnectDevice(device.Ip);
+                            }
+                            else
+                            {
+                                device.IsAuthorized = (status == ConnectionStatus.Authorized);
+                                SortAvailableDevices();
+                            }
+                        });
+                    });
+                }
+            });
+        }
+
+        private async Task HeartbeatLoop()
+        {
+            while (_isRunning)
+            {
+                await Task.Delay(5000);
+
+                var deadDevices = AvailableDevices.Where(d => (DateTime.Now - d.LastSeen).TotalSeconds > 6).ToList();
+
+                foreach (var dead in deadDevices)
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        AvailableDevices.Remove(dead);
+                        ProjectDevices.Remove(dead);
+                    });
+
+                    if (_activeConnections.ContainsKey(dead.Ip))
+                    {
+                        _activeConnections[dead.Ip].Dispose();
+                        _activeConnections.Remove(dead.Ip);
+                        LoggerService.Log($"[ZMQ] Соединение с {dead.Ip} разорвано (таймаут).", LogLevel.Warning);
+                    }
+
+                    SortAvailableDevices();
+                }
+
+                var aliveDevices = AvailableDevices.ToList();
+                foreach (var device in aliveDevices)
+                {
+                    var status = await CheckConnectionStatusAsync(device);
+
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        if (status == ConnectionStatus.Offline)
+                        {
+                            AvailableDevices.Remove(device);
+                            ProjectDevices.Remove(device);
+                            DisconnectDevice(device.Ip);
+                        }
+                        else
+                        {
+                            bool isAuth = (status == ConnectionStatus.Authorized);
+                            if (device.IsAuthorized != isAuth)
+                            {
+                                device.IsAuthorized = isAuth;
+                                if (!isAuth && device.IsInProject)
+                                {
+                                    device.IsInProject = false;
+                                    ProjectDevices.Remove(device);
+                                }
+                                SortAvailableDevices();
+                            }
+                        }
+                    });
+                }
+            }
         }
 
         public void StartLocalAgent()
         {
             LoggerService.Log("Запуск локального агента...");
 
-            var (pythonPath, scriptPath) = ResolvePythonPaths();
+            var (pythonPath, scriptPath) = ResolvePythonPaths("аgent.py");
 
             _localAgent.StartAgent(pythonPath, scriptPath, 5000, AppPublicKey);
         }
 
-        private (string pythonExe, string agentScript) ResolvePythonPaths()
+        public static (string pythonExe, string agentScript) ResolvePythonPaths(string scriptName)
         {
             string currentDir = AppDomain.CurrentDomain.BaseDirectory;
             string targetDir = null;
 
+            // 1. Ищем саму папку Agent
             while (currentDir != null)
             {
-                string potentialPythonDir = System.IO.Path.Combine(currentDir, "Agent");
+                string potentialAgentDir = System.IO.Path.Combine(currentDir, "Agent");
 
-                if (System.IO.Directory.Exists(potentialPythonDir))
+                if (System.IO.Directory.Exists(potentialAgentDir))
                 {
-                    targetDir = potentialPythonDir;
+                    targetDir = potentialAgentDir;
                     break;
                 }
 
                 currentDir = System.IO.Directory.GetParent(currentDir)?.FullName;
             }
 
-            if (targetDir == null)
-            {
-                LoggerService.Log("Не удалось найти корневую папку 'python' с агентом!");
-            }
+            if (targetDir == null) return (null, null);
 
+            // 2. Формируем пути
             string pythonPath = System.IO.Path.Combine(targetDir, ".venv", "Scripts", "python.exe");
-            string scriptPath = System.IO.Path.Combine(targetDir, "agent.py");
+            string scriptPath = System.IO.Path.Combine(targetDir, scriptName); // Сюда подставится "parser.py" или "agent.py"
 
             return (pythonPath, scriptPath);
         }
@@ -112,7 +229,7 @@ namespace BayMax.Services
             return client;
         }
 
-        public async Task<bool> IsAlreadyAuthorizedAsync(Device device)
+        public async Task<ConnectionStatus> CheckConnectionStatusAsync(Device device)
         {
             return await Task.Run(() =>
             {
@@ -126,19 +243,31 @@ namespace BayMax.Services
                     using (JsonDocument doc = JsonDocument.Parse(response))
                     {
                         JsonElement root = doc.RootElement;
-                        if (root.TryGetProperty("error_code", out JsonElement code) && code.GetInt32() == 401)
+                        if (root.TryGetProperty("error_code", out JsonElement code))
                         {
-                            return false;
+                            int errCode = code.GetInt32();
+                            if (errCode == 401 || errCode == 403) return ConnectionStatus.Unauthorized;
+                            if (errCode == 504) return ConnectionStatus.Offline;
                         }
-                        return true;
+                        return ConnectionStatus.Authorized;
                     }
                 }
                 catch (Exception ex)
                 {
-                    LoggerService.Log($"Ошибка проверки статуса: {ex.Message}", LogLevel.Warning);
-                    return false;
+                    LoggerService.Log($"Ошибка связи с {device.Ip}: {ex.Message}", LogLevel.Warning);
+                    return ConnectionStatus.Offline;
                 }
             });
+        }
+
+        public void DisconnectDevice(string ip)
+        {
+            if (_activeConnections.ContainsKey(ip))
+            {
+                _activeConnections[ip].Dispose();
+                _activeConnections.Remove(ip);
+                LoggerService.Log($"[ZMQ] Память соединения {ip} очищена.");
+            }
         }
 
         public async Task<string> PairAsync(Device device, string pin)
@@ -156,14 +285,90 @@ namespace BayMax.Services
 
                 string response = client.SendCommand(req);
 
-                if (response.Contains("success")) device.IsConnected = true;
+                if (response.Contains("success")) device.IsAuthorized = true;
 
                 return response;
             });
         }
 
+        public async Task<List<int>> GetAvailablePortsAsync(Device device, int count)
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    BayMaxClient client = EstablishConnection(device.Ip, device.Port, device.PublicKey);
+
+                    var req = new { type = "discover_request", count = count, client_public_key = AppPublicKey };
+                    string response = client.SendCommand(req);
+
+                    using (JsonDocument doc = JsonDocument.Parse(response))
+                    {
+                        var root = doc.RootElement;
+                        if (root.TryGetProperty("status", out var status) && status.GetString() == "success")
+                        {
+                            if (root.TryGetProperty("ports", out var portsArray))
+                            {
+                                return portsArray.EnumerateArray().Select(p => p.GetInt32()).ToList();
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LoggerService.Log($"Ошибка запроса портов у {device.Name}: {ex.Message}", LogLevel.Error);
+                }
+                return new List<int>();
+            });
+        }
+
+        public async Task<bool> SendDeployRequestAsync(Device device, object requestObj)
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    BayMaxClient client = EstablishConnection(device.Ip, device.Port, device.PublicKey);
+
+                    string response = client.SendCommand(requestObj);
+
+                    if (response.Contains("\"status\": \"success\"") || response.Contains("\"success\""))
+                    {
+                        LoggerService.Log($"[ДЕПЛОЙ] Успешно загружен граф на {device.Name}", LogLevel.Success);
+                        return true;
+                    }
+
+                    LoggerService.Log($"[ДЕПЛОЙ] Ошибка от агента {device.Name}: {response}", LogLevel.Error);
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    LoggerService.Log($"[ДЕПЛОЙ] Сетевая ошибка при отправке на {device.Name}: {ex.Message}", LogLevel.Error);
+                    return false;
+                }
+            });
+        }
+
+        public async Task<string> SendCommandAsync(Device device, object requestObj)
+        {
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    BayMaxClient client = EstablishConnection(device.Ip, device.Port, device.PublicKey);
+                    return client.SendCommand(requestObj);
+                }
+                catch (Exception ex)
+                {
+                    LoggerService.Log($"[ZMQ] Ошибка отправки команды на {device.Name}: {ex.Message}", LogLevel.Error);
+                    return "{\"type\":\"error_response\"}";
+                }
+            });
+        }
+
         public void Shutdown()
         {
+            _isRunning = false;
             _discovery.Stop();
             _localAgent.StopAgent();
             foreach (var client in _activeConnections.Values)
@@ -171,5 +376,28 @@ namespace BayMax.Services
                 client.Dispose();
             }
         }
+
+        public void SortAvailableDevices()
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                var sorted = AvailableDevices
+                    .OrderByDescending(d => d.IsInProject)
+                    .ThenByDescending(d => d.IsAuthorized)
+                    .ThenBy(d => d.Name)
+                    .ToList();
+
+                for (int i = 0; i < sorted.Count; i++)
+                {
+                    int oldIndex = AvailableDevices.IndexOf(sorted[i]);
+                    if (oldIndex != i)
+                    {
+                        AvailableDevices.Move(oldIndex, i);
+                    }
+                }
+            });
+        }
+
+
     }
 }

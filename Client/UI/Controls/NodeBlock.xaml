@@ -12,6 +12,10 @@
         BorderThickness="2" 
         CornerRadius="8">
 
+        <Border.Effect>
+            <DropShadowEffect x:Name="ActiveGlow" BlurRadius="0" ShadowDepth="0" Opacity="0"/>
+        </Border.Effect>
+
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -29,13 +33,11 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,10,0">
-
-                        <Button Width="12" Height="12"
-                    Cursor="Hand"
-                    Margin="0,0,8,0" Click="DeleteNode_Click">
+                        <Button x:Name="DeleteBtn" Width="12" Height="12" Cursor="Hand" Margin="0,0,8,0" Click="DeleteNode_Click">
                             <Button.Style>
                                 <Style TargetType="Button">
                                     <Setter Property="Template">
@@ -64,12 +66,7 @@
                             </Button.Style>
                         </Button>
 
-                        <ToggleButton x:Name="LockToggle"
-                          Width="16" Height="16"
-                          Cursor="Hand"
-                          Background="Transparent"
-                          BorderThickness="0"
-                          ToolTip="Заблокировать перемещение">
+                        <ToggleButton x:Name="LockToggle" Width="16" Height="16" Cursor="Hand" Background="Transparent" BorderThickness="0" ToolTip="Заблокировать перемещение">
                             <ToggleButton.Style>
                                 <Style TargetType="ToggleButton">
                                     <Setter Property="Content" Value="🔓"/>
@@ -77,12 +74,7 @@
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="ToggleButton">
-                                                <TextBlock Text="{TemplateBinding Content}" 
-                                               Foreground="{TemplateBinding Foreground}" 
-                                               FontFamily="Segoe UI Emoji"
-                                               HorizontalAlignment="Center" 
-                                               VerticalAlignment="Center" 
-                                               FontSize="12"/>
+                                                <TextBlock Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" FontFamily="Segoe UI Emoji" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="12"/>
                                             </ControlTemplate>
                                         </Setter.Value>
                                     </Setter>
@@ -98,17 +90,26 @@
                                 </Style>
                             </ToggleButton.Style>
                         </ToggleButton>
-
                     </StackPanel>
 
                     <TextBlock x:Name="NodeTitle" 
-                   Grid.Column="1"
-                   Text="Нода" 
-                   Foreground="White" 
-                   FontWeight="Bold"
-                   HorizontalAlignment="Center" 
-                   VerticalAlignment="Center"
-                   Margin="0,0,12,0"/>
+               Grid.Column="1"
+               Text="Нода" 
+               Foreground="White" 
+               FontWeight="Bold"
+               HorizontalAlignment="Center" 
+               VerticalAlignment="Center"
+               Margin="0,0,10,0"/>
+
+                    <ComboBox x:Name="DeviceSelector" 
+              Grid.Column="2" 
+              Width="90" Height="22"
+              Margin="0,0,5,0"
+              FontSize="11"
+              DisplayMemberPath="Name"
+              ToolTip="Выберите устройство для выполнения"
+              Visibility="Collapsed"
+              SelectionChanged="DeviceSelector_SelectionChanged"/>
                 </Grid>
             </Border>
 

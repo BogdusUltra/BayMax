@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
+
 namespace BayMax.UI.Controls
 {
     public class ConnectionLine
@@ -20,6 +21,7 @@ namespace BayMax.UI.Controls
                 _endPin = value;
                 if (_endPin != null)
                 {
+                    PathElement.Stroke = new SolidColorBrush(DataTypeColors.GetBrightColor(StartPin.DataType));
                     StartPin.ValueChanged += TransmitData;
 
                     if (StartPin.DataValue != null)
@@ -36,7 +38,7 @@ namespace BayMax.UI.Controls
 
             PathElement = new Path
             {
-                Stroke = startPin.PinDot.Stroke,
+                Stroke = new SolidColorBrush(DataTypeColors.GetBaseColor(startPin.DataType)),
                 StrokeThickness = 3,
                 IsHitTestVisible = false
             };

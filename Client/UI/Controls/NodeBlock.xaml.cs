@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Controls.Primitives;
-using BayMax.Nodes;
 
 namespace BayMax.UI.Controls
 {
@@ -26,12 +25,15 @@ namespace BayMax.UI.Controls
         private Point _clickPosition;
 
         public NodeType Type { get; private set; }
+        public string Id { get; } = Guid.NewGuid().ToString("N");
+        public string LogicNodeTypeName { get; set; } = "UnknownNode";
 
         public List<NodePin> Pins { get; } = new List<NodePin>();
 
         public event Action Moved;
         public event Action Resized;
 
+        public Models.Device TargetDevice { get; private set; }
         public bool IsSelected { get; private set; }
         private Brush _originalBorderBrush;
 
@@ -56,7 +58,15 @@ namespace BayMax.UI.Controls
             {
                 if (_originalBorderBrush == null) _originalBorderBrush = NodeBorder.BorderBrush;
 
-                NodeBorder.BorderBrush = new SolidColorBrush(Colors.White);
+                if (Type == NodeType.UI)
+                {
+                    NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#78dbe2"));
+                }
+                else
+                {
+                    NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#e1ff85"));
+                }
+                
                 NodeBorder.BorderThickness = new Thickness(3);
             }
             else
@@ -93,13 +103,41 @@ namespace BayMax.UI.Controls
         {
             if (Type == NodeType.UI)
             {
-                NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#007ACC")); 
+                NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2dd5e1")); 
                 NodeTitle.Text = $"[Интерфейс] {title}";
+                DeviceSelector.Visibility = Visibility.Collapsed;
             }
             else if (Type == NodeType.Logic)
             {
                 NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A7FC00"));
                 NodeTitle.Text = $"[Логика] {title}";
+                DeviceSelector.Visibility = Visibility.Visible;
+                var mainWindow = Application.Current.MainWindow as MainWindow;
+                if (mainWindow != null && mainWindow.Core != null)
+                {
+                    DeviceSelector.ItemsSource = mainWindow.Core.ProjectDevices;
+
+                    if (mainWindow.Core.ProjectDevices.Count > 0)
+                    {
+                        DeviceSelector.SelectedIndex = 0;
+                    }
+                } 
+            }
+        }
+
+        private void DeviceSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            TargetDevice = DeviceSelector.SelectedItem as Models.Device;
+
+            if (TargetDevice == null && Type == NodeType.Logic)
+            {
+                DeviceSelector.BorderBrush = Brushes.Red;
+                DeviceSelector.ToolTip = "ВНИМАНИЕ: Выберите машину для выполнения!";
+            }
+            else
+            {
+                DeviceSelector.BorderBrush = Brushes.Gray;
+                DeviceSelector.ToolTip = "Устройство для выполнения: " + TargetDevice?.Name;
             }
         }
 
@@ -121,7 +159,6 @@ namespace BayMax.UI.Controls
                     } 
                 }
 
-                // Берем самый высокий слой, прибавляем 1 и назначаем себе
                 Panel.SetZIndex(this, maxZ + 1);
             }
         }
@@ -150,11 +187,15 @@ namespace BayMax.UI.Controls
             {
                 base.OnMouseLeftButtonDown(e);
 
-                this.Focus();
-
-                BringToFront();
-
                 var canvas = this.FindParent<NodeCanvas>();
+
+                if (canvas != null && canvas.IsDeployed)
+                {
+                    this.Focus();
+                    BringToFront();
+                    return;
+                }
+
                 if (canvas != null)
                 {
                     bool isMultiSelect = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
@@ -232,6 +273,53 @@ namespace BayMax.UI.Controls
             }
 
             e.Handled = true;
+        }
+
+        private void CopyNode_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("Копирование нод пока в разработке! \nПотребуется сериализация графа.",
+                            "В разработке", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void CutNode_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show("Вырезание нод пока в разработке!",
+                            "В разработке", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        public void SetDeployedMode(bool isDeployed)
+        {
+            LockToggle.IsChecked = isDeployed;
+            LockToggle.IsEnabled = !isDeployed;
+            DeleteBtn.IsEnabled = !isDeployed;
+
+            if (isDeployed)
+            {
+                if (Type == NodeType.Logic) this.Opacity = 0.5;
+
+                if (Type == NodeType.UI)
+                {
+                    DeleteBtn.Opacity = 0.5;
+                    LockToggle.Opacity = 0.5;
+                }
+
+                InputPinsContainer.Opacity = 0.4;
+                OutputPinsContainer.Opacity = 0.4;
+
+                if (DeviceSelector != null) DeviceSelector.IsEnabled = false;
+            }
+            else
+            {
+                this.Opacity = 1.0;
+
+                DeleteBtn.Opacity = 1.0;
+                LockToggle.Opacity = 1.0;
+
+                InputPinsContainer.Opacity = 1.0;
+                OutputPinsContainer.Opacity = 1.0;
+
+                if (DeviceSelector != null) DeviceSelector.IsEnabled = true;
+            }
         }
     }
 }

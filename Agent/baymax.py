@@ -39,7 +39,11 @@ class RobotNode:
             assigned_ports[topic_name] = actual_port
 
         # 2. Подключаемся к чужим топикам (SUB)
+
         for topic_name, address in self._sub_config.items():
+            if not address:
+                continue
+
             sock = self.context.socket(zmq.SUB)
             sock.connect(address)
             sock.setsockopt_string(zmq.SUBSCRIBE, "")

@@ -8,6 +8,8 @@ import os
 import zmq
 from multiprocessing import Process, Queue, Event
 import argparse
+import importlib.util
+import sys
 
 from registry import NODE_REGISTRY
 
@@ -17,19 +19,49 @@ def get_free_port():
         s.bind(('', 0))
         return s.getsockname()[1]
 
-def run_node_process(node_instance, status_queue, stop_event):
+
+def run_node_process(node_data, status_queue, stop_event):
     """Изолированный запуск ноды в отдельном процессе"""
+    import importlib
+    from registry import NODE_REGISTRY
+
     signal.signal(signal.SIGINT, signal.SIG_IGN)
-    node_instance._stop_event = stop_event
+
+    node_type = node_data["type"]
+    node_id = node_data["id"]
+
+    # 1. Если дочерний процесс на Windows не знает об этой ноде, подгружаем её из папки
+    if node_type not in NODE_REGISTRY:
+        try:
+            module_name = f"downloaded_nodes.{node_type}"
+            module = importlib.import_module(module_name)
+            NODE_REGISTRY[node_type] = getattr(module, node_type)
+        except Exception as e:
+            status_queue.put({"status": "error", "error": f"Сбой импорта {node_type} в новом процессе: {e}"})
+            return
+
+    # 2. Создаем ноду прямо внутри дочернего процесса (никакого Pickle!)
     try:
-        opened_ports = node_instance._setup_network()
+        NodeClass = NODE_REGISTRY[node_type]
+        my_node = NodeClass(name=node_id)
+
+        # Настраиваем провода (порты)
+        for topic, port in node_data.get("publishers", {}).items():
+            my_node.create_publisher(topic, port)
+        for topic, addr in node_data.get("subscribers", {}).items():
+            my_node.create_subscriber(topic, addr)
+
+        my_node._stop_event = stop_event
+
+        # Запускаем логику
+        opened_ports = my_node._setup_network()
         status_queue.put({"status": "ready", "ports": opened_ports})
-        node_instance.loop()
+        my_node.loop()
     except Exception as e:
         status_queue.put({"status": "error", "error": str(e)})
     finally:
-        node_instance.cleanup()
-
+        if 'my_node' in locals():
+            my_node.cleanup()
 
 class BayMaxAgent:
     def __init__(self, name="BayMax_1", port=5000, broadcast_port=5001, mode="global", master_key=None):
@@ -54,6 +86,67 @@ class BayMaxAgent:
         self.secret_key = None
         self.pin_hash = None
         self.whitelist = []
+
+        self.downloaded_nodes_dir = "downloaded_nodes"
+        if not os.path.exists(self.downloaded_nodes_dir):
+            os.makedirs(self.downloaded_nodes_dir)
+            # Создаем пустой __init__.py, чтобы Питон считал папку модулем
+            open(os.path.join(self.downloaded_nodes_dir, "__init__.py"), 'a').close()
+
+    def handle_check_nodes(self, config):
+        """Проверка наличия нужных классов нод в реестре"""
+        required_nodes = config.get("required_nodes", [])
+        missing_nodes = []
+
+        for node_name in required_nodes:
+            if node_name not in NODE_REGISTRY:
+                missing_nodes.append(node_name)
+
+        if missing_nodes:
+            print(f"[АГЕНТ] Отсутствуют ноды: {missing_nodes}. Запрашиваю код...")
+            return {"type": "missing_nodes", "nodes": missing_nodes}
+
+        return {"type": "nodes_ok", "status": "success"}
+
+    def handle_upload_node(self, config):
+        """Динамическая загрузка и компиляция нового кода ноды"""
+        node_name = config.get("node_name")
+        code = config.get("code")
+
+        if not node_name or not code:
+            return {"type": "error", "message": "Неверный формат загрузки"}
+
+        print(f"[АГЕНТ] Скачиваю код для ноды: {node_name}...")
+
+        # 1. Сохраняем код в файл
+        filepath = os.path.join(self.downloaded_nodes_dir, f"{node_name}.py")
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(code)
+
+        # 2. Магия: Динамически импортируем этот файл в работающую программу
+        try:
+            module_name = f"downloaded_nodes.{node_name}"
+            spec = importlib.util.spec_from_file_location(module_name, filepath)
+            module = importlib.util.module_from_spec(spec)
+
+            # Добавляем папку в sys.path на случай, если там есть зависимости
+            if self.downloaded_nodes_dir not in sys.path:
+                sys.path.append(self.downloaded_nodes_dir)
+
+            spec.loader.exec_module(module)
+
+            # 3. Ищем класс внутри модуля и добавляем в реестр
+            if hasattr(module, node_name):
+                node_class = getattr(module, node_name)
+                NODE_REGISTRY[node_name] = node_class
+                print(f"[АГЕНТ] Нода {node_name} успешно скомпилирована и добавлена в реестр!")
+                return {"type": "upload_success", "status": "success"}
+            else:
+                return {"type": "error", "message": f"В файле не найден класс {node_name}"}
+
+        except Exception as e:
+            print(f"[АГЕНТ ОШИБКА КОМПИЛЯЦИИ] {e}")
+            return {"type": "error", "message": str(e)}
 
     def setup_security(self):
         """Инициализация при первом запуске (Ключи и PIN)"""
@@ -166,16 +259,10 @@ class BayMaxAgent:
         print("\n[АГЕНТ] Начинаю развертывание проекта...")
         for node_data in config.get("nodes", []):
             node_id = node_data["id"]
-            NodeClass = NODE_REGISTRY[node_data["type"]]
-            my_node = NodeClass(name=node_id)
 
-            for topic, port in node_data.get("publishers", {}).items():
-                my_node.create_publisher(topic, port)
-            for topic, addr in node_data.get("subscribers", {}).items():
-                my_node.create_subscriber(topic, addr)
-
+            # Мы передаем чистый словарь node_data, который Питон легко проглотит
             q = Queue()
-            p = Process(target=run_node_process, args=(my_node, q, self.global_stop_event))
+            p = Process(target=run_node_process, args=(node_data, q, self.global_stop_event))
             self.processes.append(p)
             p.start()
 
@@ -248,6 +335,10 @@ class BayMaxAgent:
                     response = self.handle_deploy_request(config)
                 elif cmd_type == "stop_request":
                     response = self.handle_stop_request(config)
+                elif cmd_type == "check_nodes":
+                    response = self.handle_check_nodes(config)
+                elif cmd_type == "upload_node":
+                    response = self.handle_upload_node(config)
                 else:
                     response = {"type": "error_response", "message": f"Неизвестная команда {cmd_type}"}
 
@@ -260,6 +351,8 @@ class BayMaxAgent:
 
 
 if __name__ == "__main__":
+
+
     parser = argparse.ArgumentParser(description="Локальный сервер (Агент) для платформы BayMax")
 
     parser.add_argument("--name", type=str, default="BayMax",

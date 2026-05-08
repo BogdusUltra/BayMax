@@ -5,22 +5,41 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="800">
-    <Canvas x:Name="DrawArea" Background="#1E1E1E" ClipToBounds="True" Focusable="True">
 
-        <Canvas.ContextMenu>
-            <ContextMenu>
-                <MenuItem Header="Добавить элемент интерфейса" Click="AddUINode_Click"/>
-                <MenuItem Header="Добавить вычислительный блок" Click="AddLogicNode_Click"/>
-            </ContextMenu>
-        </Canvas.ContextMenu>
+    <Border x:Name="Viewport" ClipToBounds="True" Background="#1E1E1E">
 
-        <Rectangle x:Name="SelectionMarquee"
-                   Panel.ZIndex="9999999"
-               Visibility="Collapsed"
-               StrokeThickness="1"
-               Stroke="#00A2FF"
-               Fill="#3300A2FF" 
-               StrokeDashArray="4 4"
-               IsHitTestVisible="False"/>
-    </Canvas>
+        <Canvas x:Name="DrawArea" Width="100000" Height="100000" Focusable="True" MouseRightButtonDown="OnCanvasRightClick">
+
+            <Canvas.Background>
+                <DrawingBrush TileMode="Tile" Viewport="0,0,25,25" ViewportUnits="Absolute">
+                    <DrawingBrush.Drawing>
+                        <GeometryDrawing>
+                            <GeometryDrawing.Geometry>
+                                <RectangleGeometry Rect="0,0,25,25"/>
+                            </GeometryDrawing.Geometry>
+                            <GeometryDrawing.Pen>
+                                <Pen Brush="#2A2A2A" Thickness="1"/>
+                            </GeometryDrawing.Pen>
+                        </GeometryDrawing>
+                    </DrawingBrush.Drawing>
+                </DrawingBrush>
+            </Canvas.Background>
+
+            <Canvas.RenderTransform>
+                <TransformGroup>
+                    <ScaleTransform x:Name="CanvasScale" ScaleX="1" ScaleY="1" />
+                    <TranslateTransform x:Name="CanvasPan" X="-50000" Y="-50000" />
+                </TransformGroup>
+            </Canvas.RenderTransform>
+
+            <Rectangle x:Name="SelectionMarquee"
+                       Panel.ZIndex="10000"
+                       Visibility="Collapsed"
+                       StrokeThickness="1"
+                       Stroke="#00A2FF"
+                       Fill="#3300A2FF" 
+                       StrokeDashArray="4 4"
+                       IsHitTestVisible="False"/>
+        </Canvas>
+    </Border>
 </UserControl>

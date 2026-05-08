@@ -14,6 +14,8 @@ namespace BayMax.Services
 
         public string PublicKey => Convert.ToBase64String(_clientCertificate.PublicKey);
 
+        private readonly object _socketLock = new object();
+
         public BayMaxClient(NetMQCertificate sharedCertificate)
         {
             _clientCertificate = sharedCertificate;
@@ -59,11 +61,20 @@ namespace BayMax.Services
 
         public string SendCommand(object commandObj)
         {
-            string json = JsonSerializer.Serialize(commandObj);
+            lock (_socketLock)
+            {
+                string json = JsonSerializer.Serialize(commandObj);
 
-            _socket.SendFrame(json);
+                _socket.SendFrame(json);
 
-            return _socket.ReceiveFrameString();
+                if (_socket.TryReceiveFrameString(TimeSpan.FromSeconds(2), out string response))
+                {
+                    return response;
+                }
+
+                LoggerService.Log("[ZMQ] Таймаут ответа от агента.", LogLevel.Warning);
+                return "{\"type\": \"error_response\", \"error_code\": 504, \"message\": \"Таймаут\"}";
+            }
         }
 
 

@@ -1,8 +1,10 @@
 ﻿using BayMax.Nodes;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 
 namespace BayMax.UI.Controls
 {
@@ -20,6 +22,12 @@ namespace BayMax.UI.Controls
 
         public event Action SelectionChanged;
 
+        private bool _isPanning;
+        private Point _panMouseStartPoint;
+        private Point _panTranslateStartPoint;
+
+        public bool IsDeployed { get; set; } = false;
+
         public NodeCanvas()
         {
             InitializeComponent();
@@ -29,34 +37,165 @@ namespace BayMax.UI.Controls
 
         private void OnCanvasRightClick(object sender, MouseButtonEventArgs e)
         {
+            if (IsDeployed) return;
+
             _rightClickPoint = e.GetPosition(DrawArea);
+            DependencyObject clickedElement = e.OriginalSource as DependencyObject;
+            NodeBlock clickedNode = clickedElement.FindParent<NodeBlock>();
 
             var contextMenu = new ContextMenu();
 
-            var groupedNodes = NodeRegistry.AvailableNodes.GroupBy(n => n.Category);
-
-            foreach (var group in groupedNodes)
+            if (clickedNode != null)
             {
-                var categoryItem = new MenuItem { Header = group.Key };
-
-                foreach (var nodeBuilder in group)
+                if (!SelectedNodes.Contains(clickedNode))
                 {
-                    var nodeItem = new MenuItem { Header = nodeBuilder.NodeName };
-
-                    nodeItem.Click += (s, args) =>
-                    {
-                        NodeBlock newNode = nodeBuilder.CreateNode();
-                        SpawnNode(newNode);
-                    };
-
-                    categoryItem.Items.Add(nodeItem);
+                    SelectNode(clickedNode, false);
                 }
 
-                contextMenu.Items.Add(categoryItem);
+                if (SelectedNodes.Count > 1)
+                {
+                    BuildGroupMenu(contextMenu);
+                }
+                else
+                {
+                    BuildSingleNodeMenu(contextMenu);
+                }
+            }
+            else
+            {
+                ClearSelection();
+                BuildCanvasMenu(contextMenu);
             }
 
             contextMenu.PlacementTarget = DrawArea;
             contextMenu.IsOpen = true;
+            e.Handled = true;
+        }
+
+        private void BuildCanvasMenu(ContextMenu menu)
+        {
+            // =========================================================
+            // ЧАСТЬ 1: БАЗОВЫЕ C#-НОДЫ (Из NodeRegistry)
+            // =========================================================
+            var nativeNodes = NodeRegistry.AvailableNodes;
+
+            if (nativeNodes != null && nativeNodes.Count > 0)
+            {
+                // Группируем ноды по их категории (например, "UI")
+                var groupedNativeNodes = nativeNodes.GroupBy(n => n.Category);
+
+                foreach (var group in groupedNativeNodes)
+                {
+                    var categoryItem = new MenuItem { Header = group.Key };
+
+                    foreach (var builder in group)
+                    {
+                        var nodeItem = new MenuItem { Header = builder.NodeName };
+
+                        // При клике просим билдер создать ноду и спавним её на холст
+                        nodeItem.Click += (s, e) =>
+                        {
+                            var newNode = builder.CreateNode();
+                            SpawnNode(newNode);
+                        };
+
+                        categoryItem.Items.Add(nodeItem);
+                    }
+                    menu.Items.Add(categoryItem);
+                }
+            }
+
+            // Добавляем визуальный разделитель между C# и Python нодами
+            if (menu.Items.Count > 0)
+            {
+                menu.Items.Add(new Separator());
+            }
+
+            // =========================================================
+            // ЧАСТЬ 2: ДИНАМИЧЕСКИЕ PYTHON-НОДЫ (Из CustomNodes)
+            // =========================================================
+            var mainWindow = Application.Current.MainWindow as MainWindow;
+
+            if (mainWindow?.NodeManager?.AvailableNodes != null && mainWindow.NodeManager.AvailableNodes.Count > 0)
+            {
+                var pythonNodes = mainWindow.NodeManager.AvailableNodes;
+                var groupedPythonNodes = pythonNodes.GroupBy(n => n.Category);
+
+                foreach (var group in groupedPythonNodes)
+                {
+                    var categoryItem = new MenuItem { Header = group.Key };
+
+                    foreach (var nodeMeta in group)
+                    {
+                        var nodeItem = new MenuItem { Header = nodeMeta.Title };
+
+                        // При клике собираем зеленую ноду из JSON данных
+                        nodeItem.Click += (s, a) => SpawnCustomNode(nodeMeta);
+
+                        categoryItem.Items.Add(nodeItem);
+                    }
+                    menu.Items.Add(categoryItem);
+                }
+            }
+            else
+            {
+                // Если папка пустая или парсер не отработал, просто для информации
+                menu.Items.Add(new MenuItem { Header = "Python нод пока нет", IsEnabled = false });
+            }
+        }
+
+        public void SpawnCustomNode(BayMax.Models.CustomPythonNode meta)
+        {
+            // Создаем логическую ноду (зеленую)
+            var newNode = new NodeBlock(NodeType.Logic, meta.Title);
+
+            // ВАЖНО: Запоминаем системное имя для Архитектора
+            newNode.LogicNodeTypeName = meta.Name;
+
+            // Генерируем входные пины
+            foreach (var inputName in meta.Inputs)
+            {
+                newNode.AddPin(inputName, PinType.Input);
+            }
+
+            // Генерируем выходные пины
+            foreach (var outputName in meta.Outputs)
+            {
+                newNode.AddPin(outputName, PinType.Output);
+            }
+
+            // Спавним на холсте (используя твой существующий метод)
+            SpawnNode(newNode);
+        }
+
+        private void BuildSingleNodeMenu(ContextMenu menu)
+        {
+            var copyItem = new MenuItem { Header = "Копировать", InputGestureText = "Ctrl+C" };
+            var cutItem = new MenuItem { Header = "Вырезать", InputGestureText = "Ctrl+X" };
+            var deleteItem = new MenuItem { Header = "Удалить", InputGestureText = "Del", Foreground = Brushes.Red };
+
+            deleteItem.Click += (s, a) => DeleteSelectedNodes();
+
+            menu.Items.Add(copyItem);
+            menu.Items.Add(cutItem);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(deleteItem);
+        }
+
+        private void BuildGroupMenu(ContextMenu menu)
+        {
+            var count = SelectedNodes.Count;
+            var header = new MenuItem { Header = $"Выбрано нод: {count}", IsEnabled = false };
+
+            var groupItem = new MenuItem { Header = "Создать группу (Frame)" };
+            var deleteItem = new MenuItem { Header = "Удалить выделенное", Foreground = Brushes.Red };
+
+            deleteItem.Click += (s, a) => DeleteSelectedNodes();
+
+            menu.Items.Add(header);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(groupItem);
+            menu.Items.Add(deleteItem);
         }
 
         public void ClearSelection()
@@ -115,6 +254,10 @@ namespace BayMax.UI.Controls
 
             if (lineToRemove != null)
             {
+                lineToRemove.StartPin.RemoveConnection();
+                lineToRemove.EndPin.RemoveConnection();
+
+                lineToRemove.Disconnect();
                 DrawArea.Children.Remove(lineToRemove.PathElement);
                 Connections.Remove(lineToRemove);
             }
@@ -122,13 +265,15 @@ namespace BayMax.UI.Controls
 
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
-            base.OnMouseLeftButtonDown(e);
+            base.OnMouseLeftButtonDown(e);        
 
             if (e.OriginalSource == DrawArea)
             {
-                bool isMultiSelect = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-
                 DrawArea.Focus();
+
+                if (IsDeployed) return;
+
+                bool isMultiSelect = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
 
                 if (!isMultiSelect)
                 {
@@ -150,6 +295,16 @@ namespace BayMax.UI.Controls
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
+            if (_isPanning)
+            {
+                Point currentMousePos = e.GetPosition(this);
+                Vector delta = currentMousePos - _panMouseStartPoint;
+
+                CanvasPan.X = _panTranslateStartPoint.X + delta.X;
+                CanvasPan.Y = _panTranslateStartPoint.Y + delta.Y;
+                return; 
+            }
+
             base.OnMouseMove(e);
 
             if (_isMarqueeSelecting)
@@ -191,8 +346,12 @@ namespace BayMax.UI.Controls
                                 {
                                     continue; 
                                 }
+                                if (pin.Type == PinType.Input && Connections.Any(c => c.EndPin == pin))
+                                {
+                                    continue;
+                                }
 
-                                Point pinPos = pin.PinDot.TranslatePoint(new Point(6, 6), DrawArea);
+                                Point pinPos = pin.PinDot.TranslatePoint(new Point(8, 8), DrawArea);
 
                                 double dx = mousePos.X - pinPos.X;
                                 double dy = mousePos.Y - pinPos.Y;
@@ -208,7 +367,7 @@ namespace BayMax.UI.Controls
                     }
                 }
 
-                Point targetPos = _magneticTarget != null ? _magneticTarget.PinDot.TranslatePoint(new Point(6, 6), DrawArea) : mousePos;
+                Point targetPos = _magneticTarget != null ? _magneticTarget.PinDot.TranslatePoint(new Point(8, 8), DrawArea) : mousePos;
 
                 _draftLine.UpdatePosition(startPos, targetPos);
             }
@@ -220,8 +379,6 @@ namespace BayMax.UI.Controls
 
             if (_isMarqueeSelecting)
             {
-
-
                 _isMarqueeSelecting = false;
                 SelectionMarquee.Visibility = Visibility.Collapsed;
                 DrawArea.ReleaseMouseCapture();
@@ -261,8 +418,11 @@ namespace BayMax.UI.Controls
                 {
                     _draftLine.EndPin = _magneticTarget;
 
-                    Point startPos = _draftLine.StartPin.PinDot.TranslatePoint(new Point(6, 6), DrawArea);
-                    Point endPos = _magneticTarget.PinDot.TranslatePoint(new Point(6, 6), DrawArea);
+                    _draftLine.StartPin.AddConnection();
+                    _draftLine.EndPin.AddConnection();
+
+                    Point startPos = _draftLine.StartPin.PinDot.TranslatePoint(new Point(8, 8), DrawArea);
+                    Point endPos = _magneticTarget.PinDot.TranslatePoint(new Point(8, 8), DrawArea);
 
                     _draftLine.UpdatePosition(startPos, endPos);
                     Connections.Add(_draftLine);
@@ -273,6 +433,84 @@ namespace BayMax.UI.Controls
                 }
                 _draftLine = null;
                 _magneticTarget = null;
+            }
+        }
+
+        protected override void OnMouseDown(MouseButtonEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.MiddleButton == MouseButtonState.Pressed)
+            {
+                _isPanning = true;
+                _panMouseStartPoint = e.GetPosition(this);
+                _panTranslateStartPoint = new Point(CanvasPan.X, CanvasPan.Y);
+
+                DrawArea.CaptureMouse();
+                e.Handled = true;
+            }
+        }
+
+        protected override void OnMouseUp(MouseButtonEventArgs e)
+        {
+            base.OnMouseUp(e);
+
+            if (e.MiddleButton == MouseButtonState.Released && _isPanning)
+            {
+                _isPanning = false;
+                DrawArea.ReleaseMouseCapture();
+                e.Handled = true;
+            }
+        }
+
+        protected override void OnMouseWheel(MouseWheelEventArgs e)
+        {
+            base.OnMouseWheel(e);
+
+            double zoomFactor = 1.1; 
+            double minScale = 0.1; 
+            double maxScale = 3.0;
+
+            double oldScale = CanvasScale.ScaleX;
+            double newScale = e.Delta > 0 ? oldScale * zoomFactor : oldScale / zoomFactor;
+
+            newScale = Math.Clamp(newScale, minScale, maxScale);
+
+            Point mousePos = e.GetPosition(this);
+
+            CanvasPan.X = mousePos.X - (mousePos.X - CanvasPan.X) * (newScale / oldScale);
+            CanvasPan.Y = mousePos.Y - (mousePos.Y - CanvasPan.Y) * (newScale / oldScale);
+
+            CanvasScale.ScaleX = newScale;
+            CanvasScale.ScaleY = newScale;
+
+            e.Handled = true;
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            if (e.Key == Key.Space)
+            {
+                CanvasScale.ScaleX = 1.0;
+                CanvasScale.ScaleY = 1.0;
+
+                double viewportWidth = ActualWidth;
+                double viewportHeight = ActualHeight;
+
+                CanvasPan.X = -50000;
+                CanvasPan.Y = -50000;
+
+                e.Handled = true;
+            }
+
+            else if (e.Key == Key.Delete || e.Key == Key.Back)
+            {
+                if (SelectedNodes.Count > 0)
+                {
+                    DeleteSelectedNodes();
+                }
+                e.Handled = true;
             }
         }
 
@@ -327,8 +565,8 @@ namespace BayMax.UI.Controls
             {
                 if (line.StartPin.FindParent<NodeBlock>() == node || line.EndPin.FindParent<NodeBlock>() == node)
                 {
-                    Point startPos = line.StartPin.PinDot.TranslatePoint(new Point(6, 6), DrawArea);
-                    Point endPos = line.EndPin.PinDot.TranslatePoint(new Point(6, 6), DrawArea);
+                    Point startPos = line.StartPin.PinDot.TranslatePoint(new Point(8, 8), DrawArea);
+                    Point endPos = line.EndPin.PinDot.TranslatePoint(new Point(8, 8), DrawArea);
 
                     line.UpdatePosition(startPos, endPos);
                 }
@@ -348,11 +586,23 @@ namespace BayMax.UI.Controls
 
             foreach (var line in linesToRemove)
             {
+                line.StartPin.RemoveConnection();
+                line.EndPin.RemoveConnection();
+
+                line.Disconnect();
                 DrawArea.Children.Remove(line.PathElement);
                 Connections.Remove(line);
             }
 
+            if (SelectedNodes.Contains(node))
+            {
+                node.SetSelected(false);
+                SelectedNodes.Remove(node);
+            }
+
             DrawArea.Children.Remove(node);
+
+            SelectionChanged?.Invoke();
         }
 
         public void DeleteSelectedNodes()
@@ -373,6 +623,34 @@ namespace BayMax.UI.Controls
         private void AddLogicNode_Click(object sender, RoutedEventArgs e)
         {
             AddLogicNode();
+        }
+
+        public void ToggleDeployMode(bool isDeployed)
+        {
+            IsDeployed = isDeployed;
+
+            ClearSelection();
+
+            if (isDeployed)
+            {
+                ClearSelection();
+            }
+
+            foreach (UIElement child in DrawArea.Children)
+            {
+                if (child is NodeBlock node)
+                {
+                    node.SetDeployedMode(isDeployed);
+                }
+            }
+
+            foreach (var connection in Connections)
+            {
+                if (connection.PathElement != null)
+                {
+                    connection.PathElement.Opacity = isDeployed ? 0.3 : 1.0;
+                }
+            }
         }
     }
 }
