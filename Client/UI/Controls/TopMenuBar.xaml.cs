@@ -18,9 +18,7 @@ namespace BayMax.UI.Controls
         public void BindCanvas(NodeCanvas canvas)
         {
             _canvas = canvas;
-
             _canvas.SelectionChanged += UpdateMenuState;
-
             UpdateMenuState();
         }
 
@@ -36,14 +34,13 @@ namespace BayMax.UI.Controls
             State1_Menu.Visibility = Visibility.Collapsed;
             StateMulti_Menu.Visibility = Visibility.Collapsed;
 
-            int count = _canvas.SelectedNodes.Count;
-
-
             if (_canvas != null && _canvas.IsDeployed)
             {
                 State0_Menu.Visibility = Visibility.Visible;
                 return;
             }
+
+            int count = _canvas.SelectedNodes.Count;
 
             if (count == 0)
             {
@@ -67,9 +64,10 @@ namespace BayMax.UI.Controls
             if (device == null) return;
 
             btn.IsEnabled = false;
+
             if (!device.IsInProject)
             {
-                var status = await _core.CheckConnectionStatusAsync(device);
+                var status = await _core.CheckAutorizationAsync(device);
 
                 if (status == ConnectionStatus.Offline)
                 {
@@ -87,8 +85,8 @@ namespace BayMax.UI.Controls
                     var pinWin = new PinWindow { Owner = Window.GetWindow(this) };
                     if (pinWin.ShowDialog() == true)
                     {
-                        string res = await _core.PairAsync(device, pinWin.ResultPin);
-                        if (!res.Contains("success"))
+                        bool isPaired = await _core.PairAsync(device, pinWin.ResultPin);
+                        if (!isPaired)
                         {
                             MessageBox.Show("Ошибка авторизации. Неверный PIN-код.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
                             btn.IsEnabled = true;
@@ -117,7 +115,6 @@ namespace BayMax.UI.Controls
                 _core.ProjectDevices.Remove(device);
             }
 
-            _core.SortAvailableDevices();
             btn.IsEnabled = true;
         }
 
@@ -147,16 +144,21 @@ namespace BayMax.UI.Controls
                 if (isSuccess)
                     MessageBox.Show("Проект успешно скомпилирован и запущен на агентах!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
                 else
-                    Services.LoggerService.Log("Деплой прерван из-за ошибок.", Services.LogLevel.Warning);
+                {
+                    LoggerService.Log("Деплой прерван из-за ошибок.", LogLevel.Warning);
+
+                    _canvas.ToggleDeployMode(false);
+                    DeployButton.Content = "ДЕПЛОЙ";
+                    DeployButton.Background = new SolidColorBrush(Color.FromRgb(0, 122, 204));
+                    _core.StopNetBridge();
+                }   
             }
             else
             {
                 DeployButton.Content = "ДЕПЛОЙ";
                 DeployButton.Background = new SolidColorBrush(Color.FromRgb(0, 122, 204));
 
-                // ВЫКЛЮЧАЕМ СЕТЕВОЙ МОСТ
-                var mainWindow = Window.GetWindow(this) as MainWindow;
-                mainWindow?.UIBridge.Stop();
+                _core.StopNetBridge();
             }
         }
     }

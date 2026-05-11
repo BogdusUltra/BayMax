@@ -74,14 +74,10 @@ namespace BayMax.UI.Controls
 
         private void BuildCanvasMenu(ContextMenu menu)
         {
-            // =========================================================
-            // ЧАСТЬ 1: БАЗОВЫЕ C#-НОДЫ (Из NodeRegistry)
-            // =========================================================
             var nativeNodes = NodeRegistry.AvailableNodes;
 
             if (nativeNodes != null && nativeNodes.Count > 0)
             {
-                // Группируем ноды по их категории (например, "UI")
                 var groupedNativeNodes = nativeNodes.GroupBy(n => n.Category);
 
                 foreach (var group in groupedNativeNodes)
@@ -92,7 +88,6 @@ namespace BayMax.UI.Controls
                     {
                         var nodeItem = new MenuItem { Header = builder.NodeName };
 
-                        // При клике просим билдер создать ноду и спавним её на холст
                         nodeItem.Click += (s, e) =>
                         {
                             var newNode = builder.CreateNode();
@@ -105,15 +100,11 @@ namespace BayMax.UI.Controls
                 }
             }
 
-            // Добавляем визуальный разделитель между C# и Python нодами
             if (menu.Items.Count > 0)
             {
                 menu.Items.Add(new Separator());
             }
 
-            // =========================================================
-            // ЧАСТЬ 2: ДИНАМИЧЕСКИЕ PYTHON-НОДЫ (Из CustomNodes)
-            // =========================================================
             var mainWindow = Application.Current.MainWindow as MainWindow;
 
             if (mainWindow?.NodeManager?.AvailableNodes != null && mainWindow.NodeManager.AvailableNodes.Count > 0)
@@ -128,10 +119,7 @@ namespace BayMax.UI.Controls
                     foreach (var nodeMeta in group)
                     {
                         var nodeItem = new MenuItem { Header = nodeMeta.Title };
-
-                        // При клике собираем зеленую ноду из JSON данных
                         nodeItem.Click += (s, a) => SpawnCustomNode(nodeMeta);
-
                         categoryItem.Items.Add(nodeItem);
                     }
                     menu.Items.Add(categoryItem);
@@ -139,12 +127,11 @@ namespace BayMax.UI.Controls
             }
             else
             {
-                // Если папка пустая или парсер не отработал, просто для информации
                 menu.Items.Add(new MenuItem { Header = "Python нод пока нет", IsEnabled = false });
             }
         }
 
-        public void SpawnCustomNode(BayMax.Models.CustomPythonNode meta)
+        public void SpawnCustomNode(Models.CustomPythonNode meta)
         {
             // Создаем логическую ноду (зеленую)
             var newNode = new NodeBlock(NodeType.Logic, meta.Title);

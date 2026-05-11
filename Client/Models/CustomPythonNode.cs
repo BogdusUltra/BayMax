@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using System.Text.Json.Serialization; // Обязательно нужен этот using!
+using System.Text.Json.Serialization;
 
 namespace BayMax.Models
 {

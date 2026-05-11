@@ -34,8 +34,6 @@ namespace BayMax.Models
                 OnPropertyChanged();
             }
         }
-
-        // Тот самый значок, про который ты просил
         public string StatusIcon => IsAuthorized ? "✅" : "🔒";
 
         public event PropertyChangedEventHandler PropertyChanged;

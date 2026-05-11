@@ -18,8 +18,7 @@ namespace BayMax.Services
 
         public void LoadNodes()
         {
-            // Теперь мы четко просим найти файл parser.py внутри папки Agent
-            var (pythonPath, scriptPath) = BayMaxCore.ResolvePythonPaths("parser.py");
+            var (pythonPath, scriptPath) = PythonEnv.GetPath("parser.py");
 
             if (pythonPath == null || scriptPath == null)
             {
@@ -27,10 +26,8 @@ namespace BayMax.Services
                 return;
             }
 
-            // Базовая папка, где лежит твой .exe и CustomNodes
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 
-            // 1. Запускаем Питон
             var startInfo = new ProcessStartInfo
             {
                 FileName = pythonPath,
@@ -59,9 +56,9 @@ namespace BayMax.Services
                 string json = File.ReadAllText(jsonPath);
 
                 // КРИТИЧЕСКИ ВАЖНО: Игнорируем регистр букв при парсинге
-                var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-                AvailableNodes = System.Text.Json.JsonSerializer.Deserialize<List<CustomPythonNode>>(json, options);
+                AvailableNodes = JsonSerializer.Deserialize<List<CustomPythonNode>>(json, options);
                 LoggerService.Log($"Синхронизировано нод: {AvailableNodes?.Count ?? 0}", LogLevel.Success);
             }
             else
