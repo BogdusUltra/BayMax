@@ -21,8 +21,12 @@ namespace BayMax.Services
         {
             try
             {
+                await _core.RefreshPythonNodesAsync();
+
                 var allNodes = canvas.DrawArea.Children.OfType<NodeBlock>().ToList();
                 var logicNodes = allNodes.Where(n => n.Type == NodeType.Logic).ToList();
+
+                var availablePythonNodes = _core.AvailablePythonNodes;
 
                 if (logicNodes.Count == 0)
                 {
@@ -30,22 +34,37 @@ namespace BayMax.Services
                     return false;
                 }
 
-                foreach (var node in logicNodes)
+                var uniqueDevices = logicNodes.Select(n => n.TargetDevice).Distinct().ToList();
+
+                foreach (var device in uniqueDevices)
                 {
-                    if (node.TargetDevice == null || !node.TargetDevice.IsAuthorized)
+                    if (device == null)
                     {
-                        MessageBox.Show("Не все ноды привязаны к авторизованным устройствам!", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                        MessageBox.Show("На холсте есть ноды, которые не привязаны ни к одному устройству!", "Ошибка сборки", MessageBoxButton.OK, MessageBoxImage.Error);  
+                        return false;
+                    }
+
+                    var status = await _core.CheckAutorizationAsync(device);
+
+                    if (status == ConnectionStatus.Offline)
+                    {
+                        MessageBox.Show($"Устройство {device.Name} ({device.Ip}) недоступно (Offline).\n\nДеплой отменен.", "Ошибка сети", MessageBoxButton.OK, MessageBoxImage.Error);
+
+                        return false;
+                    }
+                    else if (status == ConnectionStatus.Unauthorized)
+                    {
+                        MessageBox.Show($"Нет доступа к устройству {device.Name} ({device.Ip}). Проверьте авторизацию.\n\nДеплой отменен.", "Ошибка доступа", MessageBoxButton.OK, MessageBoxImage.Error);
+
                         return false;
                     }
                 }
 
-                var mainWindow = Application.Current.MainWindow as MainWindow;
                 _core.StartNetBridge();
 
-                var connectionsByInput = canvas.Connections.GroupBy(c => c.EndPin).ToDictionary(g => g.Key, g => g.First());
+                var connectionsByInput = canvas.Connections.ToDictionary(c => c.EndPin, c => c);
 
                 var groupedByDevice = logicNodes.GroupBy(n => n.TargetDevice);
-                var availablePythonNodes = mainWindow?.NodeManager?.AvailableNodes ?? new List<CustomPythonNode>();
 
                 bool allSuccess = true;
 
@@ -54,11 +73,25 @@ namespace BayMax.Services
                 foreach (var group in groupedByDevice)
                 {
                     Device targetDevice = group.Key;
-
-                    // Если Питон запущен локально, используем 127.0.0.1, иначе - IP компьютера в сети
                     string localIp = GetLocalIPAddress(targetDevice.Ip);
 
-                    // ПРОХОД 0: HANDSHAKE
+                    // --- ПРОХОД 0.1: СМАРТ-ДЕПЛОЙ (Принудительное обновление) ---
+                    var modifiedTypes = group.Select(n => n.LogicNodeTypeName).Distinct().Where(typeName => 
+                    {
+                        var meta = availablePythonNodes.FirstOrDefault(m => m.Name == typeName);
+                        return meta != null && meta.IsModified;
+                    }).ToList();
+
+                    foreach (var typeName in modifiedTypes)
+                    {
+                        var meta = availablePythonNodes.First(m => m.Name == typeName);
+                        LoggerService.Log($"[АРХИТЕКТОР] Обнаружено изменение в {typeName}. Принудительно обновляю на {targetDevice.Name}...");
+
+                        if (!await _core.UploadNodeAsync(targetDevice, meta.Name, meta.SourceCode))
+                            return false;
+                    }
+
+                    // --- ПРОХОД 0.2: СТАНДАРТНЫЙ HANDSHAKE ---
                     var requiredTypes = group.Select(n => n.LogicNodeTypeName).Distinct().ToList();
                     var checkRes = await _core.CheckNodesAsync(targetDevice, requiredTypes);
 
@@ -69,7 +102,8 @@ namespace BayMax.Services
                             var meta = availablePythonNodes.FirstOrDefault(n => n.Name == missing.GetString());
                             if (meta != null && !string.IsNullOrEmpty(meta.SourceCode))
                             {
-                                if (!await _core.UploadNodeAsync(targetDevice, meta.Name, meta.SourceCode)) return false;
+                                if (!await _core.UploadNodeAsync(targetDevice, meta.Name, meta.SourceCode)) 
+                                    return false;
                             }
                         }
                     }
@@ -137,6 +171,7 @@ namespace BayMax.Services
 
                 if (allSuccess)
                 {
+                    _core.CommitNodeChanges();
                     ActivateUIConnections(canvas, globalLogicPublishers);
                 }
 
@@ -174,15 +209,11 @@ namespace BayMax.Services
 
                         if (conn.StartPin.DataValue != null)
                         {
-                            string initialData = conn.StartPin.DataValue.ToString();
-                            string pinId = conn.StartPin.Id;
-
                             Task.Run(async () =>
                             {
-                                // Ждем полсекунды, чтобы Питон 100% успел запустить все сокеты
                                 await Task.Delay(500);
                                 if (canvas.IsDeployed)
-                                    _core.SendBridgeData(pinId, initialData);
+                                    _core.SendBridgeData(conn.StartPin.Id, conn.StartPin.DataValue.ToString());
                             });
                         }
                     }

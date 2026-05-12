@@ -1,4 +1,5 @@
 ﻿using BayMax.Nodes;
+using BayMax.Services;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,6 +11,8 @@ namespace BayMax.UI.Controls
 {
     public partial class NodeCanvas : UserControl
     {
+        private BayMaxCore _core;
+
         private Point _rightClickPoint;
 
         public List<ConnectionLine> Connections { get; private set; } = new List<ConnectionLine>();
@@ -33,6 +36,62 @@ namespace BayMax.UI.Controls
             InitializeComponent();
 
             DrawArea.MouseRightButtonDown += OnCanvasRightClick;
+        }
+
+        public void BindCore(BayMaxCore core)
+        {
+            _core = core;
+        }
+
+        public void SyncLogicNodes()
+        {
+            if (_core?.AvailablePythonNodes == null) return;
+
+            var nodesOnCanvas = DrawArea.Children.OfType<NodeBlock>()
+                                                 .Where(n => n.Type == NodeType.Logic)
+                                                 .ToList();
+
+            foreach (var node in nodesOnCanvas)
+            {
+                var freshMeta = _core.AvailablePythonNodes.FirstOrDefault(m => m.Name == node.LogicNodeTypeName);
+                if (freshMeta == null) continue;
+
+                var nodeConnections = Connections.Where(c => c.StartPin.ParentNode == node || c.EndPin.ParentNode == node).ToList();
+                var connectionMap = new List<(ConnectionLine line, string pinTitle, PinType pinType)>();
+
+                foreach (var conn in nodeConnections)
+                {
+                    if (conn.StartPin.ParentNode == node)
+                        connectionMap.Add((conn, conn.StartPin.Title, PinType.Output));
+                    else
+                        connectionMap.Add((conn, conn.EndPin.Title, PinType.Input));
+                }
+
+                node.RefreshStructure(freshMeta);
+
+                node.UpdateLayout();
+
+                foreach (var entry in connectionMap)
+                {
+                    var newPin = node.Pins.FirstOrDefault(p => p.Title == entry.pinTitle && p.Type == entry.pinType);
+
+                    if (newPin != null)
+                    {
+                        if (entry.pinType == PinType.Output) entry.line.StartPin = newPin;
+                        else entry.line.EndPin = newPin;
+
+                        newPin.AddConnection();
+                    }
+                    else
+                    {
+                        entry.line.Disconnect();
+                        DrawArea.Children.Remove(entry.line.PathElement);
+                        Connections.Remove(entry.line);
+                    }
+                }
+
+                UpdateLinesForNode(node); 
+            }
         }
 
         private void OnCanvasRightClick(object sender, MouseButtonEventArgs e)
@@ -105,17 +164,14 @@ namespace BayMax.UI.Controls
                 menu.Items.Add(new Separator());
             }
 
-            var mainWindow = Application.Current.MainWindow as MainWindow;
-
-            if (mainWindow?.NodeManager?.AvailableNodes != null && mainWindow.NodeManager.AvailableNodes.Count > 0)
+            if (_core?.AvailablePythonNodes != null && _core.AvailablePythonNodes.Count > 0)
             {
-                var pythonNodes = mainWindow.NodeManager.AvailableNodes;
+                var pythonNodes = _core.AvailablePythonNodes;
                 var groupedPythonNodes = pythonNodes.GroupBy(n => n.Category);
 
                 foreach (var group in groupedPythonNodes)
                 {
                     var categoryItem = new MenuItem { Header = group.Key };
-
                     foreach (var nodeMeta in group)
                     {
                         var nodeItem = new MenuItem { Header = nodeMeta.Title };
@@ -127,7 +183,7 @@ namespace BayMax.UI.Controls
             }
             else
             {
-                menu.Items.Add(new MenuItem { Header = "Python нод пока нет", IsEnabled = false });
+                menu.Items.Add(new MenuItem { Header = "Python нод не найдено", IsEnabled = false });
             }
         }
 
@@ -597,6 +653,7 @@ namespace BayMax.UI.Controls
             var nodesToDelete = SelectedNodes.ToList();
             foreach (var node in nodesToDelete)
             {
+                //MessageBox.Show($"{node}", "Сбой компилятора", MessageBoxButton.OK, MessageBoxImage.Error);
                 DeleteNode(node);
             }
             ClearSelection();

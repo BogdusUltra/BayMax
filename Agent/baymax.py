@@ -16,10 +16,10 @@ class RobotNode:
             return not self._stop_event.is_set()
         return True
 
-    def create_publisher(self, topic_name, port=0):
+    def create_publisher(self, topic_name, port=0, data_type="Any"):
         self._pub_config[topic_name] = port
 
-    def create_subscriber(self, topic_name, address):
+    def create_subscriber(self, topic_name, address=None, data_type="Any"):
         self._sub_config[topic_name] = address
 
     def _setup_network(self):

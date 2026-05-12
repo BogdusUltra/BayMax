@@ -118,6 +118,20 @@ namespace BayMax.UI.Controls
             btn.IsEnabled = true;
         }
 
+        private async void RefreshNodes_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as Button;
+            if (btn != null) btn.IsEnabled = false;
+
+            await _core.RefreshPythonNodesAsync();
+
+            _canvas.SyncLogicNodes();
+
+            MessageBox.Show($"Список нод успешно обновлен!\nДоступно вычислительных блоков: {_core.AvailablePythonNodes.Count}",
+                            "Синхронизация", MessageBoxButton.OK, MessageBoxImage.Information);
+
+            if (btn != null) btn.IsEnabled = true;
+        }
         private void AddUI_Click(object sender, RoutedEventArgs e) => _canvas.AddUINode();
         private void AddLogic_Click(object sender, RoutedEventArgs e) => _canvas.AddLogicNode();
         private void Delete_Click(object sender, RoutedEventArgs e) => _canvas.DeleteSelectedNodes();
@@ -129,37 +143,67 @@ namespace BayMax.UI.Controls
 
         private async void Deploy_Click(object sender, RoutedEventArgs e)
         {
-            bool newState = !_canvas.IsDeployed;
-            _canvas.ToggleDeployMode(newState);
+            DeployButton.IsEnabled = false;
 
-            if (newState)
+            try
             {
-                DeployButton.Content = "СТОП";
-                DeployButton.Background = new SolidColorBrush(Color.FromRgb(255, 75, 75));
-                _canvas.Focus();
+                if (!_canvas.IsDeployed)
+                {
+                    DeployButton.Content = "ЗАПУСК...";
+                    DeployButton.Opacity = 0.7;
 
-                var compiler = new GraphCompiler(_core);
-                bool isSuccess = await compiler.CompileAndDeployAsync(_canvas);
+                    var compiler = new GraphCompiler(_core);
+                    bool isSuccess = await compiler.CompileAndDeployAsync(_canvas);
 
-                if (isSuccess)
-                    MessageBox.Show("Проект успешно скомпилирован и запущен на агентах!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                    if (isSuccess)
+                    {
+                        _canvas.ToggleDeployMode(true);
+                        DeployButton.Content = "СТОП";
+                        DeployButton.Background = new SolidColorBrush(Color.FromRgb(255, 75, 75));
+                        _canvas.Focus();
+
+                        _core.CommitNodeChanges();
+
+                        MessageBox.Show("Проект успешно скомпилирован и запущен на агентах!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        _canvas.ToggleDeployMode(false);
+                        DeployButton.Content = "ДЕПЛОЙ";
+                        DeployButton.Background = new SolidColorBrush(Color.FromRgb(0, 122, 204));
+
+                        await _core.StopProjectAsync();
+                        LoggerService.Log("Деплой прерван из-за ошибок.", LogLevel.Warning);
+                    }
+                }
                 else
                 {
-                    LoggerService.Log("Деплой прерван из-за ошибок.", LogLevel.Warning);
+                    DeployButton.Content = "ОСТАНОВКА...";
+                    DeployButton.Opacity = 0.7;
+
+                    await _core.StopProjectAsync();
 
                     _canvas.ToggleDeployMode(false);
                     DeployButton.Content = "ДЕПЛОЙ";
                     DeployButton.Background = new SolidColorBrush(Color.FromRgb(0, 122, 204));
-                    _core.StopNetBridge();
-                }   
+                }
             }
-            else
+            catch (Exception ex)
             {
+                MessageBox.Show($"Ошибка при переключении режима: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                _canvas.ToggleDeployMode(false);
                 DeployButton.Content = "ДЕПЛОЙ";
-                DeployButton.Background = new SolidColorBrush(Color.FromRgb(0, 122, 204));
-
-                _core.StopNetBridge();
             }
+            finally
+            {
+                DeployButton.IsEnabled = true;
+                DeployButton.Opacity = 1.0;
+            }
+        }
+
+        private void DeviceMenuButton_Checked(object sender, RoutedEventArgs e)
+        {
+            _core?.RefreshDevices();
         }
     }
 }

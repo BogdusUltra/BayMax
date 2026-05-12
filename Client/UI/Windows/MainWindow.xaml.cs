@@ -18,19 +18,18 @@ namespace BayMax
     {
 
         public BayMaxCore Core;
-        public NodeManager NodeManager { get; } = new NodeManager();
         
         public MainWindow()
         {
             InitializeComponent();
-
-            Task.Run(NodeManager.LoadNodes);
         
             Nodes.NodeRegistry.Initialize();
             Core = new BayMaxCore();
 
             TopMenu.BindCore(Core);
             TopMenu.BindCanvas(MainEditor);
+
+            MainEditor.BindCore(Core);
 
             //LoggerService.OnLog += OnLogReceived;
         }

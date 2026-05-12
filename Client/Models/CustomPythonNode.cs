@@ -32,5 +32,13 @@ namespace BayMax.Models
         // Архитектор будет забирать код отсюда (берет то, что не пустое)
         [JsonIgnore]
         public string SourceCode => !string.IsNullOrEmpty(SourceCodeMain) ? SourceCodeMain : SourceCodeFallback;
+
+        [JsonIgnore]
+        public bool IsModified { get; set; } = false;
+
+        [JsonIgnore]
+        public DateTime LastDiskChange { get; set; }
     }
+
+
 }

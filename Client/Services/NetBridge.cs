@@ -58,8 +58,7 @@ namespace BayMax.Services
                 {
                     if (e.Socket.TryReceiveFrameString(out string msg))
                     {
-                        // Передаем данные в UI поток
-                        Application.Current.Dispatcher.Invoke(() => onMessageReceived(msg));
+                        Application.Current.Dispatcher.BeginInvoke(new Action(() => onMessageReceived(msg)));
                     }
                 };
 

@@ -41,7 +41,7 @@ namespace BayMax.Services
                 string jsonReq = JsonSerializer.Serialize(payload);
                 _socket.SendFrame(jsonReq);
 
-                if (_socket.TryReceiveFrameString(TimeSpan.FromSeconds(2), out string response))
+                if (_socket.TryReceiveFrameString(TimeSpan.FromSeconds(0.5), out string response))
                 {
                     return JsonDocument.Parse(response).RootElement;
                 }
@@ -91,6 +91,12 @@ namespace BayMax.Services
         public bool SendDeployCommand(object deployData)
         {
             var res = SendCommand(deployData);
+            return res.TryGetProperty("status", out var st) && st.GetString() == "success";
+        }
+
+        public bool SendStopCommand()
+        {
+            var res = SendCommand(new { type = "stop_request", client_public_key = _clientPublicKey });
             return res.TryGetProperty("status", out var st) && st.GetString() == "success";
         }
 

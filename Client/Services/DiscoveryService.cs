@@ -22,16 +22,21 @@ namespace BayMax.Services
             public int zmq_port { get; set; }
             public string public_key { get; set; }
             public string ip_address { get; set; }
+            public ConnectionStatus Status { get; set; }
         }
 
         public event Action<List<AgentBeacon>> OnScanComplete;
+
+        private readonly object _lock = new object();
+
+        private readonly Dictionary<string, AgentBeacon> _discoveredBeacons = new Dictionary<string, AgentBeacon>();
 
         public DiscoveryService(int port = 5001)
         {
             _port = port;
         }
 
-        public void StartPeriodicScan(int intervalSeconds = 5)
+        public void StartPeriodicScan(int intervalSeconds = 2)
         {
             Stop();
             _cts = new CancellationTokenSource();
@@ -44,46 +49,59 @@ namespace BayMax.Services
             _cts?.Cancel();
         }
 
+        public void RequestImmediateUpdate()
+        {
+            List<AgentBeacon> snapshot;
+            lock (_lock)
+            {
+                snapshot = new List<AgentBeacon>(_discoveredBeacons.Values);
+                lock (_lock) { _discoveredBeacons.Clear(); }
+            }
+            OnScanComplete?.Invoke(snapshot);
+        }
+
         private async Task ScanLoop(int intervalSeconds, CancellationToken token)
         {
             using var udpClient = new UdpClient(_port);
             udpClient.EnableBroadcast = true;
 
-            while (!token.IsCancellationRequested)
-            {
-                var discoveredBeacons = new Dictionary<string, AgentBeacon>();
-
-                var listenTask = ListenForBeaconsAsync(udpClient, discoveredBeacons, token);
-                await Task.WhenAny(listenTask, Task.Delay(1500, token));
-
-                if (discoveredBeacons.Count > 0)
-                {
-                    OnScanComplete?.Invoke(new List<AgentBeacon>(discoveredBeacons.Values));
-                }
-
-                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), token);
-            }
-        }
-
-        private async Task ListenForBeaconsAsync(UdpClient udpClient, Dictionary<string, AgentBeacon> beacons, CancellationToken token)
-        {
-            try
+            var listenTask = Task.Run(async () =>
             {
                 while (!token.IsCancellationRequested)
                 {
-                    var result = await udpClient.ReceiveAsync();
-                    string json = Encoding.UTF8.GetString(result.Buffer);
+                    try
+                    {   
+                        var result = await udpClient.ReceiveAsync();
+                        string json = Encoding.UTF8.GetString(result.Buffer);
 
-                    var beacon = JsonSerializer.Deserialize<AgentBeacon>(json);
-                    if (beacon != null)
-                    {
-                        beacon.ip_address = result.RemoteEndPoint.Address.ToString();
+                        var beacon = JsonSerializer.Deserialize<AgentBeacon>(json);
+                        if (beacon != null)
+                        {
+                            beacon.ip_address = result.RemoteEndPoint.Address.ToString();
 
-                        beacons[beacon.ip_address] = beacon;
+                            lock (_lock)
+                            {
+                                _discoveredBeacons[beacon.ip_address] = beacon;
+                            }
+                        }
                     }
+                    catch { }
+                }
+                
+            }, token);
+
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {  
+                    await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), token);
+                    RequestImmediateUpdate();
                 }
             }
-            catch { /* Игнорируем ошибки таймаута сокетов */ }
+            catch (TaskCanceledException) { }
+
+            udpClient.Close();
+        
         }
     }
 }

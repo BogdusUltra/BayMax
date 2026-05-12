@@ -201,6 +201,9 @@ namespace BayMax.UI.Controls
                     bool isMultiSelect = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
 
                     canvas.SelectNode(this, isMultiSelect);
+
+                    BringToFront();
+                    this.Focus();
                 }
 
                 if (LockToggle.IsChecked != true)
@@ -257,20 +260,20 @@ namespace BayMax.UI.Controls
 
         private void DeleteNode_Click(object sender, RoutedEventArgs e)
         {
-            MessageBoxResult result = MessageBox.Show(
-                "Вы уверены, что хотите удалить эту ноду и все её связи?",
-                "Подтверждение удаления",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
+            //MessageBoxResult result = MessageBox.Show(
+            //    "Вы уверены, что хотите удалить эту ноду и все её связи?",
+            //    "Подтверждение удаления",
+            //    MessageBoxButton.YesNo,
+            //    MessageBoxImage.Question);
 
-            if (result == MessageBoxResult.Yes)
+            //if (result == MessageBoxResult.Yes)
+            //{
+            var canvas = this.FindParent<NodeCanvas>();
+            if (canvas != null)
             {
-                var canvas = this.FindParent<NodeCanvas>();
-                if (canvas != null)
-                {
-                    canvas.DeleteNode(this);
-                }
+                canvas.DeleteNode(this);
             }
+            //}
 
             e.Handled = true;
         }
@@ -320,6 +323,30 @@ namespace BayMax.UI.Controls
 
                 if (DeviceSelector != null) DeviceSelector.IsEnabled = true;
             }
+        }
+
+        public void RefreshStructure(Models.CustomPythonNode meta)
+        {
+            //var oldConnections = Pins.Where(p => p.ConnectionCount > 0)
+            //                         .Select(p => new { p.Title, p.Type, p.DataType })
+            //                         .ToList();
+
+            InputPinsContainer.Children.Clear();
+            OutputPinsContainer.Children.Clear();
+            Pins.Clear();
+
+            foreach (var input in meta.Inputs)
+            {
+                AddPin(input, PinType.Input);
+            }
+            foreach (var output in meta.Outputs)
+            {
+                AddPin(output, PinType.Output);
+            }
+
+            NodeTitle.Text = $"[Логика] {meta.Title}";
+
+            Resized?.Invoke(); 
         }
     }
 }

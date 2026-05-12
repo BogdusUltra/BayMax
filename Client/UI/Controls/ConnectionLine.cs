@@ -11,7 +11,17 @@ namespace BayMax.UI.Controls
     public class ConnectionLine
     {
         public Path PathElement { get; private set; }
-        public NodePin StartPin { get; set; }
+        private NodePin _startPin;
+        public NodePin StartPin
+        {
+            get => _startPin;
+            set
+            {
+                if (_startPin != null) _startPin.ValueChanged -= TransmitData; // Отписываемся от старого
+                _startPin = value;
+                if (_startPin != null) _startPin.ValueChanged += TransmitData; // Подписываемся на новый
+            }
+        }
         private NodePin _endPin;
         public NodePin EndPin 
         { 
@@ -19,15 +29,9 @@ namespace BayMax.UI.Controls
             set
             {
                 _endPin = value;
-                if (_endPin != null)
+                if (_endPin != null && StartPin != null)
                 {
                     PathElement.Stroke = new SolidColorBrush(DataTypeColors.GetBrightColor(StartPin.DataType));
-                    StartPin.ValueChanged += TransmitData;
-
-                    if (StartPin.DataValue != null)
-                    {
-                        TransmitData(StartPin.DataValue);
-                    }
                 }
             }
         }

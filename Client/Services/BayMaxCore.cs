@@ -14,8 +14,8 @@ namespace BayMax.Services
     {
         private readonly SecurityService _security;
         private readonly DiscoveryService _discovery;
-
-        public NetBridge _netBridge;
+        private readonly NodeManager _nodeManager;
+        private readonly NetBridge _netBridge;
 
         private readonly Dictionary<string, BayMaxConnection> _connections = new Dictionary<string, BayMaxConnection>();
 
@@ -24,6 +24,8 @@ namespace BayMax.Services
 
         public string AppPublicKey => _security.PublicKeyBase64;
 
+        public List<CustomPythonNode> AvailablePythonNodes => _nodeManager.AvailableNodes;
+
         //public event Action<string> OnDeviceReady;   
 
         public BayMaxCore()
@@ -31,9 +33,34 @@ namespace BayMax.Services
             _security = new SecurityService();
             _discovery = new DiscoveryService();
             _netBridge = new NetBridge();
+            _nodeManager = new NodeManager();
+
+            RefreshPythonNodesAsync();
 
             _discovery.OnScanComplete += HandleDiscoveredDevices;
             _discovery.StartPeriodicScan();
+
+            //Task.Run(StartHeartbeatMonitor);
+        }
+
+
+        public async Task RefreshPythonNodesAsync()
+        {
+            await Task.Run(() =>
+            {
+                _nodeManager.LoadNodes();
+            });
+        }
+
+        public void CommitNodeChanges()
+        {
+            _nodeManager.SaveCurrentMetadata();
+        }
+
+
+        public void RefreshDevices()
+        {
+            _discovery.RequestImmediateUpdate();
         }
 
         public BayMaxConnection GetOrCreateConnection(Device device)
@@ -45,35 +72,80 @@ namespace BayMax.Services
             return _connections[device.Ip];
         }
 
-        private void HandleDiscoveredDevices(List<DiscoveryService.AgentBeacon> beacons)
+        private async void HandleDiscoveredDevices(List<DiscoveryService.AgentBeacon> beacons)
         {
-            Application.Current.Dispatcher.Invoke(() =>
-            {
-                var currentIps = beacons.Select(b => b.ip_address).ToList();
+            var currentDevices = new List<Device>();
+            Application.Current.Dispatcher.Invoke(() => currentDevices = AvailableDevices.ToList());
 
-                var lostDevices = AvailableDevices.Where(d => !currentIps.Contains(d.Ip)).ToList();
-                foreach (var device in lostDevices)
-                {
-                    AvailableDevices.Remove(device);
-                    ProjectDevices.Remove(device);
-                    DisconnectDevice(device.Ip);
-                }
+            var checkedDevices = await Task.Run(() =>
+            {
+                var results = new List<(Device dev, ConnectionStatus status)>();
 
                 foreach (var beacon in beacons)
                 {
-                    var device = AvailableDevices.FirstOrDefault(d => d.Ip == beacon.ip_address);
-
-                    if (device == null)
+                    var existing = currentDevices.FirstOrDefault(d => d.Ip == beacon.ip_address);
+                    if (existing != null)
                     {
-                        device = new Device { Name = beacon.agent_name, Ip = beacon.ip_address, Port = beacon.zmq_port, PublicKey = beacon.public_key };
-                        AvailableDevices.Add(device);
+                        existing.Name = beacon.agent_name;
+                        existing.Port = beacon.zmq_port;
+                        existing.PublicKey = beacon.public_key;
                     }
+                    else
+                    {
+                        currentDevices.Add(new Device
+                        {
+                            Name = beacon.agent_name,
+                            Ip = beacon.ip_address,
+                            Port = beacon.zmq_port,
+                            PublicKey = beacon.public_key
+                        });
+                    }
+                }
 
-                    // 3. Проверяем авторизацию через BayMaxConnection
+                foreach (var device in currentDevices)
+                {
                     var connection = GetOrCreateConnection(device);
                     var status = connection.SendCheckAuthorizationCommand();
 
-                    device.IsAuthorized = (status == ConnectionStatus.Authorized);
+                    results.Add((device, status));
+                }
+
+                return results;
+            });
+
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                foreach (var item in checkedDevices)
+                {
+                    var device = item.dev;
+                    var status = item.status;
+
+                    if (status == ConnectionStatus.Offline)
+                    {
+                        var toRemove = AvailableDevices.FirstOrDefault(d => d.Ip == device.Ip);
+                        if (toRemove != null)
+                        {
+                            AvailableDevices.Remove(toRemove);
+                            ProjectDevices.Remove(toRemove);
+                            DisconnectDevice(toRemove.Ip);
+                        }
+                        continue; 
+                    }
+
+                    var existingUI = AvailableDevices.FirstOrDefault(d => d.Ip == device.Ip);
+                    if (existingUI == null)
+                    {
+                        device.IsAuthorized = (status == ConnectionStatus.Authorized);
+                        device.LastSeen = DateTime.Now;
+                        AvailableDevices.Add(device);
+                    }
+                    else
+                    {
+                        existingUI.Name = device.Name;
+                        existingUI.Port = device.Port;
+                        existingUI.PublicKey = device.PublicKey;
+                        existingUI.IsAuthorized = (status == ConnectionStatus.Authorized);
+                    }
                 }
 
                 SortDevices();
@@ -110,9 +182,6 @@ namespace BayMax.Services
                 }
             });
         }
-
-
-
         public async Task<List<int>> GetAvailablePortsAsync(Device device, int count)
         {
             return await Task.Run(() =>
@@ -173,6 +242,31 @@ namespace BayMax.Services
         public int GetBridgePort(string pinId) => _netBridge.GetPublisherPort(pinId);
         public void SendBridgeData(string pinId, string data) => _netBridge.SendData(pinId, data);
         public void ConnectBridgeToAgent(string pinId, string addr, Action<string> callback) => _netBridge.ConnectToAgent(pinId, addr, callback);
+
+        public async Task StopProjectAsync()
+        {
+            StopNetBridge();
+
+            var stopTasks = new List<Task>();
+
+            foreach (var device in ProjectDevices)
+            {
+                stopTasks.Add(Task.Run(() =>
+                {
+                    try
+                    {
+                        var conn = GetOrCreateConnection(device);
+                        conn.SendStopCommand();
+                    }
+                    catch (Exception)
+                    {
+
+                    }
+                }));
+            }
+
+            await Task.WhenAll(stopTasks);
+        }
 
         public void Shutdown()
         {

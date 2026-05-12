@@ -30,7 +30,7 @@ class MathAddNode(RobotNode):
 
             # Считаем и отправляем ТОЛЬКО если что-то поменялось и обе цифры уже известны
             if self.last_a is not None and self.last_b is not None:
-                res = self.last_a  + self.last_b
+                res = self.last_a + self.last_b
                 # print(f"[MathNode] Считаю: {a} + {b} = {res}")
                 self.publish("topic_out_Result", str(res))
 
