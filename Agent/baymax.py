@@ -1,5 +1,6 @@
 import zmq
 import time
+import json
 
 class RobotNode:
     def __init__(self, name):
@@ -16,19 +17,29 @@ class RobotNode:
             return not self._stop_event.is_set()
         return True
 
-    def create_publisher(self, topic_name, port=0, data_type="Any"):
-        self._pub_config[topic_name] = port
+    def create_publisher(self, topic_name, data_type="Any", port=0):
+        self._pub_config[topic_name] = {"port": port, "data_type": data_type}
 
-    def create_subscriber(self, topic_name, address=None, data_type="Any"):
-        self._sub_config[topic_name] = address
+    def create_subscriber(self, topic_name, data_type="Any", address=None):
+        self._sub_config[topic_name] = {"address": address, "data_type": data_type}
+
+    def set_publisher_port(self, topic_name, port):
+        if topic_name in self._pub_config:
+            self._pub_config[topic_name]["port"] = port
+
+    def set_subscriber_address(self, topic_name, address):
+        if topic_name in self._sub_config:
+            self._sub_config[topic_name]["address"] = address
 
     def _setup_network(self):
         self.context = zmq.Context()
         assigned_ports = {}
 
         # 1. Открываем топики вещания (PUB)
-        for topic_name, port in self._pub_config.items():
-            sock = self.context.socket(zmq.PUB) # <-- ИСПРАВЛЕНО НА PUB
+        for topic_name, config in self._pub_config.items():
+            port = config["port"]
+
+            sock = self.context.socket(zmq.PUB)
             if port == 0:
                 actual_port = sock.bind_to_random_port("tcp://*")
             else:
@@ -40,7 +51,8 @@ class RobotNode:
 
         # 2. Подключаемся к чужим топикам (SUB)
 
-        for topic_name, address in self._sub_config.items():
+        for topic_name, config in self._sub_config.items():
+            address = config.get("address")
             if not address:
                 continue
 
@@ -53,7 +65,12 @@ class RobotNode:
 
     def publish(self, topic_name, data):
         if topic_name in self.publishers:
-            self.publishers[topic_name].send_string(data, encoding='utf-8')
+            if isinstance(data, (dict, list)):
+                string_data = json.dumps(data, ensure_ascii=False)
+            else:
+                string_data = str(data)
+
+            self.publishers[topic_name].send_string(string_data, encoding='utf-8')
 
     def receive(self, topic_name):
         if topic_name in self.subscribers:

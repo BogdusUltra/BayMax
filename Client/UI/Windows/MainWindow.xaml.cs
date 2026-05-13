@@ -94,6 +94,15 @@ namespace BayMax
             }
         }
 
+        private void ConsoleHeader_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Left && e.ClickCount == 2)
+            {
+                CloseConsole();
+                e.Handled = true; 
+            }
+        }
+
         private void CloseConsole_Click(object sender, RoutedEventArgs e)
         {
             CloseConsole();

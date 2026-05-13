@@ -45,11 +45,11 @@ def run_node_process(node_data, status_queue, stop_event):
         NodeClass = NODE_REGISTRY[node_type]
         my_node = NodeClass(name=node_id)
 
-        # Настраиваем провода (порты)
         for topic, port in node_data.get("publishers", {}).items():
-            my_node.create_publisher(topic, port)
+            my_node.set_publisher_port(topic, port)
+
         for topic, addr in node_data.get("subscribers", {}).items():
-            my_node.create_subscriber(topic, addr)
+            my_node.set_subscriber_address(topic, addr)
 
         my_node._stop_event = stop_event
 

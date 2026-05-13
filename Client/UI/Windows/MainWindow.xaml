@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:BayMax"
         xmlns:controls="clr-namespace:BayMax.UI.Controls"
         mc:Ignorable="d"
-        Title="BayMax Architect" Height="800" Width="1200"
+        Title="BayMax Architect" Height="800" Width="1200" MinHeight="400" MinWidth="600"
         Background="#1E1E1E">
     <Grid>
         <Grid.RowDefinitions>
@@ -34,7 +34,7 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <Grid Background="#252526">
+                <Grid Background="#252526" MouseDown="ConsoleHeader_MouseDown">
                     <TextBlock Text="OUTPUT LOG" Foreground="#CCCCCC" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="10,0"/>
 
                     <Button HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" Width="12" Height="12" Cursor="Hand" Click="CloseConsole_Click">

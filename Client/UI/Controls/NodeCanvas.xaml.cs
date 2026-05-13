@@ -57,14 +57,14 @@ namespace BayMax.UI.Controls
                 if (freshMeta == null) continue;
 
                 var nodeConnections = Connections.Where(c => c.StartPin.ParentNode == node || c.EndPin.ParentNode == node).ToList();
-                var connectionMap = new List<(ConnectionLine line, string pinTitle, PinType pinType)>();
+                var connectionMap = new List<(ConnectionLine line, string pinTitle, PinType pinType, PinDataType otherPinType)> ();
 
                 foreach (var conn in nodeConnections)
                 {
                     if (conn.StartPin.ParentNode == node)
-                        connectionMap.Add((conn, conn.StartPin.Title, PinType.Output));
+                        connectionMap.Add((conn, conn.StartPin.Title, PinType.Output, conn.EndPin.DataType));
                     else
-                        connectionMap.Add((conn, conn.EndPin.Title, PinType.Input));
+                        connectionMap.Add((conn, conn.EndPin.Title, PinType.Input, conn.StartPin.DataType));
                 }
 
                 node.RefreshStructure(freshMeta);
@@ -75,15 +75,35 @@ namespace BayMax.UI.Controls
                 {
                     var newPin = node.Pins.FirstOrDefault(p => p.Title == entry.pinTitle && p.Type == entry.pinType);
 
+                    bool keepConnection = false;
+
                     if (newPin != null)
                     {
-                        if (entry.pinType == PinType.Output) entry.line.StartPin = newPin;
-                        else entry.line.EndPin = newPin;
+                        if (newPin.DataType == entry.otherPinType || newPin.DataType == PinDataType.Any || entry.otherPinType == PinDataType.Any)
+                        {
+                            keepConnection = true;
+                        }
+                    }
+
+                    if (keepConnection)
+                    {
+                        if (entry.pinType == PinType.Output)
+                        {
+                            entry.line.StartPin = newPin;
+                            entry.line.PathElement.Stroke = new SolidColorBrush(DataTypeColors.GetBrightColor(newPin.DataType));
+                        }
+                        else
+                        {
+                            entry.line.EndPin = newPin;
+                        }
 
                         newPin.AddConnection();
                     }
                     else
                     {
+                        if (entry.line.StartPin != null) entry.line.StartPin.RemoveConnection();
+                        if (entry.line.EndPin != null) entry.line.EndPin.RemoveConnection();
+
                         entry.line.Disconnect();
                         DrawArea.Children.Remove(entry.line.PathElement);
                         Connections.Remove(entry.line);
@@ -202,15 +222,17 @@ namespace BayMax.UI.Controls
             newNode.LogicNodeTypeName = meta.Name;
 
             // Генерируем входные пины
-            foreach (var inputName in meta.Inputs)
+            foreach (var input in meta.Inputs)
             {
-                newNode.AddPin(inputName, PinType.Input);
+                if (!Enum.TryParse(input.DataType, true, out PinDataType pType)) pType = PinDataType.Any;
+                newNode.AddPin(input.Name, PinType.Input, pType);
             }
 
             // Генерируем выходные пины
-            foreach (var outputName in meta.Outputs)
+            foreach (var output in meta.Outputs)
             {
-                newNode.AddPin(outputName, PinType.Output);
+                if (!Enum.TryParse(output.DataType, true, out PinDataType pType)) pType = PinDataType.Any;
+                newNode.AddPin(output.Name, PinType.Output, pType);
             }
 
             // Спавним на холсте (используя твой существующий метод)

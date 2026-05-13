@@ -7,8 +7,8 @@ namespace BayMax.Nodes.UI
 {
     public class NumberInputNode : INodeBuilder
     {
-        public string NodeName => "Ввод числа";
-        public string Category => "UI";
+        public string NodeName => "Число (Ввод)";
+        public string Category => "UI (Ввод)";
 
         public NodeBlock CreateNode()
         {

@@ -18,43 +18,12 @@ namespace BayMax.UI.Controls
         public void BindCanvas(NodeCanvas canvas)
         {
             _canvas = canvas;
-            _canvas.SelectionChanged += UpdateMenuState;
-            UpdateMenuState();
         }
 
         public void BindCore(BayMaxCore core)
         {
             _core = core;
             NetworkDevicesList.ItemsSource = _core.AvailableDevices;
-        }
-
-        private void UpdateMenuState()
-        {
-            State0_Menu.Visibility = Visibility.Collapsed;
-            State1_Menu.Visibility = Visibility.Collapsed;
-            StateMulti_Menu.Visibility = Visibility.Collapsed;
-
-            if (_canvas != null && _canvas.IsDeployed)
-            {
-                State0_Menu.Visibility = Visibility.Visible;
-                return;
-            }
-
-            int count = _canvas.SelectedNodes.Count;
-
-            if (count == 0)
-            {
-                State0_Menu.Visibility = Visibility.Visible;
-            }
-            else if (count == 1)
-            {
-                State1_Menu.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                MultiSelectText.Text = $"Выбрано нод: {count}";
-                StateMulti_Menu.Visibility = Visibility.Visible;
-            }
         }
 
         private async void ToggleDeviceInProject_Click(object sender, RoutedEventArgs e)
@@ -187,6 +156,27 @@ namespace BayMax.UI.Controls
         private void DeviceMenuButton_Checked(object sender, RoutedEventArgs e)
         {
             _core?.RefreshDevices();
+        }
+
+
+        private void NewProject_Click(object sender, RoutedEventArgs e)
+        {
+            
+        }
+
+        private void OpenProject_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
+
+        private void SaveProject_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
+
+        private void SaveAsProject_Click(object sender, RoutedEventArgs e)
+        {
+
         }
     }
 }

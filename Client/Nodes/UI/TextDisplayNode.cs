@@ -5,10 +5,10 @@ using BayMax.UI.Controls;
 
 namespace BayMax.Nodes.UI
 {
-    public class TextOutputNode : INodeBuilder
+    public class TextDisplayNode : INodeBuilder
     {
-        public string NodeName => "Текстовый вывод";
-        public string Category => "UI";
+        public string NodeName => "Текст (Вывод)";
+        public string Category => "UI (Вывод)";
 
         public NodeBlock CreateNode()
         {
@@ -34,11 +34,14 @@ namespace BayMax.Nodes.UI
 
             inPin.ValueChanged += (newValue) =>
             {
-                string text = newValue?.ToString();
-                displayBox.Text = string.IsNullOrWhiteSpace(text) ? "Ожидание..." : text;
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    string text = newValue?.ToString();
+                    displayBox.Text = string.IsNullOrWhiteSpace(text) ? "Ожидание..." : text;
 
-                // Авто-скролл вниз при получении новых данных (как в чате)
-                displayBox.ScrollToEnd();
+                    // Авто-скролл вниз при получении новых данных (как в чате)
+                    displayBox.ScrollToEnd();
+                });
             };
 
             node.SetContent(displayBox);

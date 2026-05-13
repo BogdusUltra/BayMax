@@ -26,7 +26,9 @@ namespace BayMax.UI.Controls
         public object DataValue { get; private set; }
 
         public event Action<object> ValueChanged;
-        
+
+        public string NetworkAddress { get; set; }
+
 
         public NodePin(string title, PinType type, PinDataType dataType = PinDataType.Any)
         {
@@ -53,6 +55,25 @@ namespace BayMax.UI.Controls
             PinTitle.Text = Title;
 
             UpdateVisuals();
+
+            UpdateTooltip(false);
+        }
+
+        public void UpdateTooltip(bool isDeployed = false)
+        {
+            string tooltipText = $"Тип: {DataType}";
+
+            if (isDeployed && !string.IsNullOrEmpty(NetworkAddress))
+            {
+                string cleanAddress = NetworkAddress.Replace("tcp://", "");
+
+                if (Type == PinType.Output)
+                    tooltipText += $"\nВещает на: {cleanAddress}";
+                else
+                    tooltipText += $"\nСлушает: {cleanAddress}";
+            }
+
+            this.ToolTip = tooltipText;
         }
 
         public void AddConnection()

@@ -3,6 +3,14 @@ using System.Text.Json.Serialization;
 
 namespace BayMax.Models
 {
+    public class PinMetadata
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("data_type")]
+        public string DataType { get; set; }
+    }
     public class CustomPythonNode
     {
         [JsonPropertyName("Name")]
@@ -15,10 +23,10 @@ namespace BayMax.Models
         public string Category { get; set; }
 
         [JsonPropertyName("Inputs")]
-        public List<string> Inputs { get; set; } = new List<string>();
+        public List<PinMetadata> Inputs { get; set; }
 
         [JsonPropertyName("Outputs")]
-        public List<string> Outputs { get; set; } = new List<string>();
+        public List<PinMetadata> Outputs { get; set; }
 
         // Если в ранней версии парсера ключ назывался с маленькой буквы, 
         // мы ловим его в это свойство

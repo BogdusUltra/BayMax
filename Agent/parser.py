@@ -25,10 +25,20 @@ def parse_nodes(folder_path):
 
                 for item in ast.walk(node):
                     if isinstance(item, ast.Call) and isinstance(item.func, ast.Attribute):
-                        if item.func.attr == "create_publisher":
-                            node_info["outputs"].append(item.args[0].value)
-                        elif item.func.attr == "create_subscriber":
-                            node_info["inputs"].append(item.args[0].value)
+                        if item.func.attr == "create_publisher" or item.func.attr == "create_subscriber":
+                            topic_name = item.args[0].value
+                            data_type = "Any"
+
+                            for kw in item.keywords:
+                                if kw.arg == "data_type" and hasattr(kw.value, 'value'):
+                                    data_type = kw.value.value
+
+                            pin_info = {"name": topic_name, "data_type": data_type}
+
+                            if item.func.attr == "create_publisher":
+                                node_info["outputs"].append(pin_info)
+                            else:
+                                node_info["inputs"].append(pin_info)
 
                 schema.append(node_info)
 

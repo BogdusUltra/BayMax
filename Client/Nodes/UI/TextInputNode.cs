@@ -8,8 +8,8 @@ namespace BayMax.Nodes.UI
 {
     public class TextInputNode : INodeBuilder
     {
-        public string NodeName => "Текстовый ввод";
-        public string Category => "UI";
+        public string NodeName => "Текст (Ввод)";
+        public string Category => "UI (Ввод)";
 
         public NodeBlock CreateNode()
         {

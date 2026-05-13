@@ -122,6 +122,9 @@ namespace BayMax.Services
                             outPinAddresses[deviceOutputPins[i].Id] = addr;
 
                             globalLogicPublishers[deviceOutputPins[i].Id] = addr;
+
+                            deviceOutputPins[i].NetworkAddress = addr;
+                            deviceOutputPins[i].UpdateTooltip(true);
                         }
                     }
 
@@ -138,7 +141,7 @@ namespace BayMax.Services
                         var outPins = node.OutputPinsContainer.Children.OfType<NodePin>().ToList();
                         for (int i = 0; i < outPins.Count; i++)
                         {
-                            dNode.Publishers[meta.Outputs[i]] = outPinPorts[outPins[i].Id];
+                            dNode.Publishers[meta.Outputs[i].Name] = outPinPorts[outPins[i].Id];
                         }
 
                         var inPins = node.InputPinsContainer.Children.OfType<NodePin>().ToList();
@@ -149,14 +152,27 @@ namespace BayMax.Services
                                 var sourcePin = conn.StartPin;
                                 var sourceNode = sourcePin.FindParent<NodeBlock>();
 
+                                string resolvedAddr = null;
+
                                 if (sourceNode.Type == NodeType.UI)
                                 {
                                     int uiPort = _core.GetBridgePort(sourcePin.Id);
-                                    dNode.Subscribers[meta.Inputs[i]] = $"tcp://{localIp}:{uiPort}";
+                                    resolvedAddr = $"tcp://{localIp}:{uiPort}";
+
+                                    sourcePin.NetworkAddress = resolvedAddr;
+                                    sourcePin.UpdateTooltip(true);
                                 }
                                 else if (outPinAddresses.TryGetValue(sourcePin.Id, out var addr))
                                 {
-                                    dNode.Subscribers[meta.Inputs[i]] = addr;
+                                    resolvedAddr = addr; 
+                                }
+
+                                if (!string.IsNullOrEmpty(resolvedAddr))
+                                {
+                                    dNode.Subscribers[meta.Inputs[i].Name] = resolvedAddr;
+
+                                    inPins[i].NetworkAddress = resolvedAddr;
+                                    inPins[i].UpdateTooltip(true);
                                 }
                             }
                         }
@@ -219,6 +235,9 @@ namespace BayMax.Services
                 {
                     if (logicPubs.TryGetValue(conn.StartPin.Id, out var address))
                     {
+                        conn.EndPin.NetworkAddress = address;
+                        conn.EndPin.UpdateTooltip(true);
+
                         _core.ConnectBridgeToAgent(conn.EndPin.Id, address, (msg) =>
                         {
                             conn.EndPin.SetValue(msg);

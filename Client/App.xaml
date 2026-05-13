@@ -4,6 +4,8 @@
              xmlns:local="clr-namespace:BayMax"
              StartupUri="UI/Windows/MainWindow.xaml">
     <Application.Resources>
+        
+
         <Style TargetType="ScrollBar">
             <Style.Triggers>
                 <Trigger Property="Orientation" Value="Vertical">

@@ -104,7 +104,7 @@ namespace BayMax.UI.Controls
             if (Type == NodeType.UI)
             {
                 NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2dd5e1")); 
-                NodeTitle.Text = $"[Интерфейс] {title}";
+                NodeTitle.Text = title;
                 DeviceSelector.Visibility = Visibility.Collapsed;
             }
             else if (Type == NodeType.Logic)
@@ -177,7 +177,6 @@ namespace BayMax.UI.Controls
             }
 
             Pins.Add(newPin);
-
             return newPin;
         }
 
@@ -323,6 +322,11 @@ namespace BayMax.UI.Controls
 
                 if (DeviceSelector != null) DeviceSelector.IsEnabled = true;
             }
+
+            foreach (var pin in Pins)
+            {
+                pin.UpdateTooltip(isDeployed);
+            }
         }
 
         public void RefreshStructure(Models.CustomPythonNode meta)
@@ -337,11 +341,19 @@ namespace BayMax.UI.Controls
 
             foreach (var input in meta.Inputs)
             {
-                AddPin(input, PinType.Input);
+                if (!Enum.TryParse(input.DataType, true, out PinDataType parsedType))
+                {
+                    parsedType = PinDataType.Any;
+                }
+                AddPin(input.Name, PinType.Input, parsedType);
             }
             foreach (var output in meta.Outputs)
             {
-                AddPin(output, PinType.Output);
+                if (!Enum.TryParse(output.DataType, true, out PinDataType parsedType))
+                {
+                    parsedType = PinDataType.Any;
+                }
+                AddPin(output.Name, PinType.Output, parsedType);
             }
 
             NodeTitle.Text = $"[Логика] {meta.Title}";

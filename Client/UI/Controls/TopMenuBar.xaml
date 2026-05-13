@@ -4,128 +4,238 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="50" d:DesignWidth="800"
-             Focusable="True"
-             MouseLeftButtonDown="OnMenuBackgroundClick">
-    <Border Background="#252526" Padding="15,5" BorderBrush="#3E3E42" BorderThickness="0,0,0,1">
+             d:DesignHeight="40" d:DesignWidth="1200">
+
+    <UserControl.Resources>
+        <Style x:Key="MainMenuItemStyle" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Padding" Value="20,0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="TemplateRoot" Background="Transparent" SnapsToDevicePixels="True">
+
+                            <Grid>
+                                <ContentPresenter ContentSource="Header" Margin="{TemplateBinding Padding}" 
+                                                  VerticalAlignment="Center" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+
+                                <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False" 
+                                       IsOpen="{TemplateBinding IsSubmenuOpen}" PopupAnimation="Fade" Placement="Bottom">
+                                    <Border x:Name="SubMenuBorder" Background="#252526" BorderBrush="#3E3E42" 
+                                            BorderThickness="1" Padding="2" MinWidth="180">
+                                        <ScrollViewer x:Name="SubMenuScrollViewer" CanContentScroll="True">
+                                            <ItemsPresenter x:Name="ItemsPresenter" KeyboardNavigation.DirectionalNavigation="Cycle" 
+                                                            Grid.IsSharedSizeScope="True" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" 
+                                                            KeyboardNavigation.TabNavigation="Cycle"/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Popup>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="TemplateRoot" Property="Background" Value="#3E3E42"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsSubmenuOpen" Value="True">
+                                <Setter TargetName="TemplateRoot" Property="Background" Value="#3E3E42"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Border" Background="Transparent" Padding="{TemplateBinding Padding}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ContentPresenter x:Name="HeaderHost" Grid.Column="0" ContentSource="Header" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="InputGestureText" Grid.Column="1" Text="{TemplateBinding InputGestureText}" 
+                                           Margin="20,0,0,0" VerticalAlignment="Center" Foreground="#666" FontSize="10"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#094771"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DeployButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#007ACC"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="35,0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#0086E6"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="VerticalSeparatorStyle" TargetType="Rectangle">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Fill" Value="#3E3E42"/>
+            <Setter Property="Margin" Value="10,8"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="#252526" BorderBrush="#3E3E42" BorderThickness="0,0,0,1" Height="40">
         <Grid>
-            <StackPanel x:Name="State0_Menu" Orientation="Horizontal" Visibility="Visible">
-                <Button x:Name="AddUINodeBtn" Content="+ UI Нода" Click="AddUI_Click" Padding="10,5" Margin="0,0,10,0" Cursor="Hand"/>
-                <Button x:Name="AddLogicNodeBtn" Content="+ Логика" Click="AddLogic_Click" Padding="10,5" Margin="0,0,10,0" Cursor="Hand"/>
-               
-                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="5,0,15,0" Background="#3E3E42"/>
-				<TextBlock Text="Машины:" Foreground="LightGray" VerticalAlignment="Center" Margin="0,0,5,0"/>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
 
-                <ToggleButton x:Name="DeviceMenuButton" Content="Найти в сети..." 
-                  Padding="8,3" Cursor="Hand" Checked="DeviceMenuButton_Checked"/>
+            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch">
 
-                <Popup IsOpen="{Binding IsChecked, ElementName=DeviceMenuButton}" 
-       StaysOpen="False" PlacementTarget="{Binding ElementName=DeviceMenuButton}"
-       AllowsTransparency="True" PopupAnimation="Slide">
-                    <Border Background="#252526" BorderBrush="#3E3E42" BorderThickness="1" Padding="5" Width="220" MinHeight="50">
-                        <Grid>
-                            <TextBlock Text="Машин в сети не обнаружено" 
-                       Foreground="#666666" 
-                       HorizontalAlignment="Center" 
-                       VerticalAlignment="Center"
-                       FontStyle="Italic"
-                       TextAlignment="Center"
-                       Margin="10">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding ElementName=NetworkDevicesList, Path=HasItems}" Value="False">
-                                                <Setter Property="Visibility" Value="Visible"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                    <Menu Background="Transparent" VerticalAlignment="Stretch">
+                        <MenuItem Header="ФАЙЛ" Style="{StaticResource MainMenuItemStyle}">
+                            <MenuItem Header="Создать новый" Click="NewProject_Click" InputGestureText="Ctrl+N"/>
+                            <MenuItem Header="Открыть..." Click="OpenProject_Click" InputGestureText="Ctrl+O"/>
+                            <Separator Background="#3E3E42" Height="1" Margin="5,2"/>
+                            <MenuItem Header="Сохранить" Click="SaveProject_Click" InputGestureText="Ctrl+S"/>
+                            <MenuItem Header="Сохранить как..." Click="SaveAsProject_Click"/>
+                        </MenuItem>
+                    </Menu>
 
-                            <ItemsControl x:Name="NetworkDevicesList">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border x:Name="DeviceItemBorder" BorderBrush="#3E3E42" BorderThickness="0,0,0,1" Padding="8,5" Background="Transparent">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
+                    <Rectangle Style="{StaticResource VerticalSeparatorStyle}"/>
 
-                                                <TextBlock Text="{Binding StatusIcon}" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="14"/>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Stretch">
+                        <ToggleButton x:Name="DeviceMenuButton" Content="МАШИНЫ"
+                                      Checked="DeviceMenuButton_Checked"
+                                      Background="Transparent" Foreground="#CCCCCC"
+                                      Padding="20,0" FontSize="11" FontWeight="SemiBold"
+                                      BorderThickness="0" Cursor="Hand"
+                                      VerticalAlignment="Stretch">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="Border" Background="{TemplateBinding Background}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Border" Property="Background" Value="#3E3E42"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter TargetName="Border" Property="Background" Value="#3E3E42"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
 
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                    <TextBlock x:Name="NameText" Text="{Binding Name}" Foreground="#DDD" FontWeight="Bold"/>
-                                                    <TextBlock x:Name="IpText" Text="{Binding Ip}" Foreground="#888" FontSize="10"/>
-                                                </StackPanel>
+                        <Popup IsOpen="{Binding IsChecked, ElementName=DeviceMenuButton}" 
+                               StaysOpen="False" PlacementTarget="{Binding ElementName=DeviceMenuButton}"
+                               AllowsTransparency="True" PopupAnimation="Fade" Placement="Bottom">
+                            <Border Background="#252526" BorderBrush="#3E3E42" BorderThickness="1" Padding="5" Width="220" MinHeight="50">
+                                <Grid>
+                                    <TextBlock Text="Машин в сети не обнаружено" 
+                                               Foreground="#666666" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               FontStyle="Italic" TextAlignment="Center" Margin="10">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ElementName=NetworkDevicesList, Path=HasItems}" Value="False">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
 
-                                                <Button x:Name="ActionButton" Grid.Column="2" Width="26" Height="26" 
-                                        Cursor="Hand" Click="ToggleDeviceInProject_Click" Tag="{Binding}">
-                                                    <Button.Style>
-                                                        <Style TargetType="Button">
-                                                            <Setter Property="Content" Value="+"/>
-                                                            <Setter Property="Background" Value="#3E3E42"/>
-                                                            <Setter Property="Foreground" Value="White"/>
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsInProject}" Value="True">
-                                                                    <Setter Property="Content" Value="-"/>
-                                                                    <Setter Property="Foreground" Value="#FF4B4B"/>
-                                                                    <Setter Property="ToolTip" Value="Убрать из проекта"/>
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </Button.Style>
-                                                </Button>
-                                            </Grid>
-                                        </Border>
+                                    <ItemsControl x:Name="NetworkDevicesList">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border x:Name="DeviceItemBorder" BorderBrush="#3E3E42" BorderThickness="0,0,0,1" Padding="8,5" Background="Transparent">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding StatusIcon}" VerticalAlignment="Center" Margin="0,0,10,0" FontSize="14"/>
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                            <TextBlock x:Name="NameText" Text="{Binding Name}" Foreground="#DDD" FontWeight="Bold"/>
+                                                            <TextBlock x:Name="IpText" Text="{Binding Ip}" Foreground="#888" FontSize="10"/>
+                                                        </StackPanel>
+                                                        <Button x:Name="ActionButton" Grid.Column="2" Width="26" Height="26" 
+                                                                Cursor="Hand" Click="ToggleDeviceInProject_Click" Tag="{Binding}">
+                                                            <Button.Style>
+                                                                <Style TargetType="Button">
+                                                                    <Setter Property="Content" Value="+"/>
+                                                                    <Setter Property="Background" Value="#3E3E42"/>
+                                                                    <Setter Property="Foreground" Value="White"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsInProject}" Value="True">
+                                                                            <Setter Property="Content" Value="-"/>
+                                                                            <Setter Property="Foreground" Value="#FF4B4B"/>
+                                                                            <Setter Property="ToolTip" Value="Убрать из проекта"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Button.Style>
+                                                        </Button>
+                                                    </Grid>
+                                                </Border>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsInProject}" Value="True">
+                                                        <Setter TargetName="DeviceItemBorder" Property="Background" Value="#2D2D30"/>
+                                                        <Setter TargetName="NameText" Property="Foreground" Value="#A7FC00"/>
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
 
-                                        <DataTemplate.Triggers>
-                                            <DataTrigger Binding="{Binding IsInProject}" Value="True">
-                                                <Setter TargetName="DeviceItemBorder" Property="Background" Value="#2D2D30"/>
-                                                <Setter TargetName="NameText" Property="Foreground" Value="#A7FC00"/>
-                                            </DataTrigger>
-                                        </DataTemplate.Triggers>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Grid>
-                    </Border>
-                </Popup>
+                    <Rectangle Style="{StaticResource VerticalSeparatorStyle}"/>
 
-                <Button Content="Очистить холст" Foreground="#FF4B4B" Padding="10,5" Margin="0,0,10,0" Cursor="Hand"/>
+                </StackPanel>
+            </ScrollViewer>
 
-                <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="5,0,10,0"/>
-                <Button x:Name="DeployButton" Content="ДЕПЛОЙ" Click="Deploy_Click" 
-        Background="#007ACC" Foreground="White" FontWeight="Bold" Padding="15,5" Cursor="Hand">
-                    <Button.Resources>
-                        <Style TargetType="Button">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}" CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </Button.Resources>
-                </Button>
-            </StackPanel>
-
-            <StackPanel x:Name="State1_Menu" Orientation="Horizontal" Visibility="Collapsed">
-                <TextBlock Text="Выбрана 1 нода:" Foreground="LightGray" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                <Button Content="Дублировать (WIP)" Padding="10,5" Margin="0,0,10,0" Cursor="Hand"/>
-                <Button Content="Удалить" Click="Delete_Click" Foreground="#FF4B4B" Padding="10,5" Margin="0,0,10,0" Cursor="Hand"/>
-            </StackPanel>
-
-            <StackPanel x:Name="StateMulti_Menu" Orientation="Horizontal" Visibility="Collapsed">
-                <TextBlock x:Name="MultiSelectText" Text="Выбрано нод: 0" Foreground="LightGray" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                <Button Content="Создать группу (WIP)" Padding="10,5" Margin="0,0,10,0" Cursor="Hand"/>
-                <Button Content="Удалить выделенные" Click="Delete_Click" Foreground="#FF4B4B" Padding="10,5" Margin="0,0,10,0" Cursor="Hand"/>
-            </StackPanel>
+            <Button x:Name="DeployButton" Grid.Column="1" Content="ДЕПЛОЙ" 
+                    HorizontalAlignment="Right" VerticalAlignment="Stretch"
+                    Click="Deploy_Click" Width="100"
+                    Style="{StaticResource DeployButtonStyle}"/>
         </Grid>
     </Border>
 </UserControl>
