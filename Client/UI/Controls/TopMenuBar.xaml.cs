@@ -117,21 +117,6 @@ namespace BayMax.UI.Controls
 
             btn.IsEnabled = true;
         }
-
-        private async void RefreshNodes_Click(object sender, RoutedEventArgs e)
-        {
-            var btn = sender as Button;
-            if (btn != null) btn.IsEnabled = false;
-
-            await _core.RefreshPythonNodesAsync();
-
-            _canvas.SyncLogicNodes();
-
-            MessageBox.Show($"Список нод успешно обновлен!\nДоступно вычислительных блоков: {_core.AvailablePythonNodes.Count}",
-                            "Синхронизация", MessageBoxButton.OK, MessageBoxImage.Information);
-
-            if (btn != null) btn.IsEnabled = true;
-        }
         private void AddUI_Click(object sender, RoutedEventArgs e) => _canvas.AddUINode();
         private void AddLogic_Click(object sender, RoutedEventArgs e) => _canvas.AddLogicNode();
         private void Delete_Click(object sender, RoutedEventArgs e) => _canvas.DeleteSelectedNodes();
@@ -161,8 +146,6 @@ namespace BayMax.UI.Controls
                         DeployButton.Content = "СТОП";
                         DeployButton.Background = new SolidColorBrush(Color.FromRgb(255, 75, 75));
                         _canvas.Focus();
-
-                        _core.CommitNodeChanges();
 
                         MessageBox.Show("Проект успешно скомпилирован и запущен на агентах!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
                     }

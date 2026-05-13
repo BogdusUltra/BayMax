@@ -34,10 +34,7 @@ namespace BayMax.Models
         public string SourceCode => !string.IsNullOrEmpty(SourceCodeMain) ? SourceCodeMain : SourceCodeFallback;
 
         [JsonIgnore]
-        public bool IsModified { get; set; } = false;
-
-        [JsonIgnore]
-        public DateTime LastDiskChange { get; set; }
+        public long LastModifiedTimestamp { get; set; }
     }
 
 

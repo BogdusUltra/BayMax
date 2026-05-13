@@ -95,17 +95,27 @@ class BayMaxAgent:
 
     def handle_check_nodes(self, config):
         """Проверка наличия нужных классов нод в реестре"""
-        required_nodes = config.get("required_nodes", [])
+        nodes_data = config.get("nodes", {})
         missing_nodes = []
 
-        for node_name in required_nodes:
-            if node_name not in NODE_REGISTRY:
+        for node_name, remote_timestamp in nodes_data.items():
+            filepath = os.path.join(self.downloaded_nodes_dir, f"{node_name}.py")
+
+            if not os.path.exists(filepath):
+                missing_nodes.append(node_name)
+                continue
+
+            local_timestamp = os.path.getmtime(filepath)
+
+            if local_timestamp < remote_timestamp - 1:
+                print(f"[АГЕНТ] Файл {node_name}.py устарел. Запрашиваю свежий код...")
                 missing_nodes.append(node_name)
 
         if missing_nodes:
-            print(f"[АГЕНТ] Отсутствуют ноды: {missing_nodes}. Запрашиваю код...")
+            print(f"[АГЕНТ] Требуется загрузка/обновление для: {missing_nodes}")
             return {"type": "missing_nodes", "nodes": missing_nodes}
 
+        print("[АГЕНТ] Все ноды актуальны.")
         return {"type": "nodes_ok", "status": "success"}
 
     def handle_upload_node(self, config):

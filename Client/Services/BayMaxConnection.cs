@@ -100,9 +100,9 @@ namespace BayMax.Services
             return res.TryGetProperty("status", out var st) && st.GetString() == "success";
         }
 
-        public JsonElement SendCheckNodesCommand(List<string> nodeTypes)
+        public JsonElement SendCheckNodesCommand(Dictionary<string, long> nodesData)
         {
-            return SendCommand(new { type = "check_nodes", required_nodes = nodeTypes, client_public_key = _clientPublicKey });
+            return SendCommand(new { type = "check_nodes", nodes = nodesData, client_public_key = _clientPublicKey });
         }
 
         public bool SendUploadNodeCommand(string nodeName, string code)

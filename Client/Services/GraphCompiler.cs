@@ -75,31 +75,28 @@ namespace BayMax.Services
                     Device targetDevice = group.Key;
                     string localIp = GetLocalIPAddress(targetDevice.Ip);
 
-                    // --- ПРОХОД 0.1: СМАРТ-ДЕПЛОЙ (Принудительное обновление) ---
-                    var modifiedTypes = group.Select(n => n.LogicNodeTypeName).Distinct().Where(typeName => 
-                    {
-                        var meta = availablePythonNodes.FirstOrDefault(m => m.Name == typeName);
-                        return meta != null && meta.IsModified;
-                    }).ToList();
-
-                    foreach (var typeName in modifiedTypes)
-                    {
-                        var meta = availablePythonNodes.First(m => m.Name == typeName);
-                        LoggerService.Log($"[АРХИТЕКТОР] Обнаружено изменение в {typeName}. Принудительно обновляю на {targetDevice.Name}...");
-
-                        if (!await _core.UploadNodeAsync(targetDevice, meta.Name, meta.SourceCode))
-                            return false;
-                    }
-
                     // --- ПРОХОД 0.2: СТАНДАРТНЫЙ HANDSHAKE ---
                     var requiredTypes = group.Select(n => n.LogicNodeTypeName).Distinct().ToList();
-                    var checkRes = await _core.CheckNodesAsync(targetDevice, requiredTypes);
+                    var nodesMetadataPayload = new Dictionary<string, long>();
+
+                    foreach (var typeName in requiredTypes)
+                    {
+                        var meta = availablePythonNodes.FirstOrDefault(m => m.Name == typeName);
+                        if (meta != null)
+                        {
+                            nodesMetadataPayload[typeName] = meta.LastModifiedTimestamp;
+                        }
+                    }
+
+                    var checkRes = await _core.CheckNodesAsync(targetDevice, nodesMetadataPayload);
 
                     if (checkRes.TryGetProperty("type", out var resType) && resType.GetString() == "missing_nodes")
                     {
                         foreach (var missing in checkRes.GetProperty("nodes").EnumerateArray())
                         {
-                            var meta = availablePythonNodes.FirstOrDefault(n => n.Name == missing.GetString());
+                            string mName = missing.GetString();
+
+                            var meta = availablePythonNodes.FirstOrDefault(n => n.Name == mName);
                             if (meta != null && !string.IsNullOrEmpty(meta.SourceCode))
                             {
                                 if (!await _core.UploadNodeAsync(targetDevice, meta.Name, meta.SourceCode)) 
@@ -171,7 +168,6 @@ namespace BayMax.Services
 
                 if (allSuccess)
                 {
-                    _core.CommitNodeChanges();
                     ActivateUIConnections(canvas, globalLogicPublishers);
                 }
 

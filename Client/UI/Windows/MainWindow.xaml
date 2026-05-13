@@ -6,15 +6,84 @@
         xmlns:local="clr-namespace:BayMax"
         xmlns:controls="clr-namespace:BayMax.UI.Controls"
         mc:Ignorable="d"
-        Title="MainWindow" Height="800" Width="1200">
+        Title="BayMax Architect" Height="800" Width="1200"
+        Background="#1E1E1E">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="0" x:Name="ConsoleRow"/>
+            <RowDefinition Height="25"/>
         </Grid.RowDefinitions>
 
         <controls:TopMenuBar x:Name="TopMenu" Grid.Row="0"/>
-
         <controls:NodeCanvas x:Name="MainEditor" Grid.Row="1"/>
+
+        <GridSplitter Grid.Row="2" x:Name="ConsoleSplitter" 
+                      Height="4" HorizontalAlignment="Stretch" 
+                      Background="#2D2D30" Cursor="SizeNS" 
+                      Visibility="Collapsed"/>
+
+        <Border Grid.Row="3" x:Name="ConsolePanel" 
+                Background="#1E1E1E" BorderBrush="#3E3E42" BorderThickness="0,1,0,0" 
+                Visibility="Collapsed">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="28"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Grid Background="#252526">
+                    <TextBlock Text="OUTPUT LOG" Foreground="#CCCCCC" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="10,0"/>
+
+                    <Button HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,10,0" Width="12" Height="12" Cursor="Hand" Click="CloseConsole_Click">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Ellipse Fill="#FF4B4B" />
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Ellipse Fill="Red">
+                                                        <Ellipse.Effect>
+                                                            <DropShadowEffect BlurRadius="5" Color="Red" ShadowDepth="0" Opacity="0.5"/>
+                                                        </Ellipse.Effect>
+                                                    </Ellipse>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+
+                <TextBox Grid.Row="1" x:Name="ConsoleOutput" 
+                         Background="#1E1E1E" Foreground="#D4D4D4" 
+                         FontFamily="Consolas" FontSize="12" 
+                         IsReadOnly="True" TextWrapping="Wrap"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto" 
+                         BorderThickness="0" Padding="10"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="4" Background="#007ACC">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="🗗 Консоль" Click="ToggleConsole_Click" 
+                        Background="Transparent" Foreground="White" 
+                        BorderThickness="0" Cursor="Hand" Padding="15,0"
+                        FontWeight="SemiBold" FontSize="11"/>
+
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

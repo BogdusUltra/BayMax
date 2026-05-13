@@ -7,6 +7,7 @@ class MathAddNode(RobotNode):
         super().__init__(name)
         self.create_subscriber("topic_in_A", "")
         self.create_subscriber("topic_in_B", "")
+
         self.create_publisher("topic_out_Result", 0)
 
         # # ДОБАВЛЯЕМ ПАМЯТЬ ДЛЯ ПИНОВ
@@ -35,4 +36,4 @@ class MathAddNode(RobotNode):
                 self.publish("topic_out_Result", str(res))
 
             # print("hello")
-            time.sleep(0.01)
+            time.sleep(0.02)

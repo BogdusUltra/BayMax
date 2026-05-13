@@ -20,45 +20,53 @@ namespace BayMax.Services
     {
         public List<CustomPythonNode> AvailableNodes { get; set; } = new List<CustomPythonNode>();
 
-        private readonly string _metadataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "nodes_metadata.json");
-        private NodeRegistryMetadata _metadata;
+        private Dictionary<string, DateTime> _lastParsedTimes = new Dictionary<string, DateTime>();
+        private readonly string _customNodesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CustomNodes");
 
         public NodeManager()
         {
-            LoadMetadata();
-        }
-        private void LoadMetadata()
-        {
-            try
-            {
-                if (File.Exists(_metadataPath))
-                {
-                    string json = File.ReadAllText(_metadataPath);
-                    _metadata = JsonSerializer.Deserialize<NodeRegistryMetadata>(json) ?? new NodeRegistryMetadata();
-                }
-                else _metadata = new NodeRegistryMetadata();
-            }
-            catch { _metadata = new NodeRegistryMetadata(); }
+            if (!Directory.Exists(_customNodesDir)) Directory.CreateDirectory(_customNodesDir);
         }
 
-        public void SaveCurrentMetadata()
+        public bool CheckForUpdates()
         {
-            try
-            {
-                foreach (var node in AvailableNodes)
-                {
-                    _metadata.LastRegisteredChanges[node.Name] = node.LastDiskChange;
-                    node.IsModified = false;
-                }
+            if (!Directory.Exists(_customNodesDir)) return false;
 
-                string json = JsonSerializer.Serialize(_metadata, new JsonSerializerOptions { WriteIndented = true });
-                File.WriteAllText(_metadataPath, json);
-            }
-            catch (Exception ex)
+            var currentFiles = Directory.GetFiles(_customNodesDir, "*.py");
+
+            if (currentFiles.Length != _lastParsedTimes.Count) return true;
+
+            foreach (var file in currentFiles)
             {
-                LoggerService.Log($"Ошибка сохранения метаданных: {ex.Message}", LogLevel.Error);
+                var lastWrite = File.GetLastWriteTimeUtc(file);
+                if (!_lastParsedTimes.TryGetValue(file, out var parsedTime) || lastWrite > parsedTime)
+                {
+                    return true;
+                }
             }
+            return false;
         }
+
+        //private readonly string _metadataPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "nodes_metadata.json");
+        //private NodeRegistryMetadata _metadata;
+
+        //public NodeManager()
+        //{
+        //    LoadMetadata();
+        //}
+        //private void LoadMetadata()
+        //{
+        //    try
+        //    {
+        //        if (File.Exists(_metadataPath))
+        //        {
+        //            string json = File.ReadAllText(_metadataPath);
+        //            _metadata = JsonSerializer.Deserialize<NodeRegistryMetadata>(json) ?? new NodeRegistryMetadata();
+        //        }
+        //        else _metadata = new NodeRegistryMetadata();
+        //    }
+        //    catch { _metadata = new NodeRegistryMetadata(); }
+        //}
 
         public void LoadNodes()
         {
@@ -100,35 +108,23 @@ namespace BayMax.Services
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var parsedNodes = JsonSerializer.Deserialize<List<CustomPythonNode>>(json, options);
 
-                string customNodesDir = Path.Combine(baseDir, "CustomNodes");
                 var validNodes = new List<CustomPythonNode>();
+                _lastParsedTimes.Clear();
 
                 if (parsedNodes != null)
                 {
                     foreach (var node in parsedNodes)
                     {
-                        string pyFilePath = Path.Combine(customNodesDir, $"{node.Name}.py");
+                        string pyFilePath = Path.Combine(_customNodesDir, $"{node.Name}.py");
 
-                        if (!File.Exists(pyFilePath))
+                        if (File.Exists(pyFilePath))
                         {
-                            continue;
-                        }
+                            DateTime fileTime = File.GetLastWriteTimeUtc(pyFilePath);
+                            node.LastModifiedTimestamp = ((DateTimeOffset)fileTime).ToUnixTimeSeconds();
+                            _lastParsedTimes[pyFilePath] = fileTime;
 
-                        node.LastDiskChange = File.GetLastWriteTime(pyFilePath);
-
-                        if (_metadata.LastRegisteredChanges.TryGetValue(node.Name, out DateTime registeredTime))
-                        {
-                            if ((node.LastDiskChange - registeredTime).TotalMilliseconds > 100)
-                            {
-                                node.IsModified = true;
-                            }
+                            validNodes.Add(node);
                         }
-                        else
-                        {
-                            node.IsModified = true;
-                        }
-
-                        validNodes.Add(node);
                     }
                 }
 

@@ -94,9 +94,15 @@ namespace BayMax.UI.Controls
             }
         }
 
-        private void OnCanvasRightClick(object sender, MouseButtonEventArgs e)
+        private async void OnCanvasRightClick(object sender, MouseButtonEventArgs e)
         {
             if (IsDeployed) return;
+
+            //bool wasUpdated = await _core.AutoRefreshPythonNodesAsync();
+            //if (wasUpdated)
+            //{
+            //    SyncLogicNodes();
+            //}
 
             _rightClickPoint = e.GetPosition(DrawArea);
             DependencyObject clickedElement = e.OriginalSource as DependencyObject;

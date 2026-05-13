@@ -44,6 +44,19 @@ namespace BayMax.Services
         }
 
 
+        public async Task<bool> AutoRefreshPythonNodesAsync()
+        {
+            return await Task.Run(() =>
+            {
+                if (_nodeManager.CheckForUpdates())
+                {
+                    _nodeManager.LoadNodes();
+                    return true;
+                }
+                return false;
+            });
+        }
+
         public async Task RefreshPythonNodesAsync()
         {
             await Task.Run(() =>
@@ -51,12 +64,6 @@ namespace BayMax.Services
                 _nodeManager.LoadNodes();
             });
         }
-
-        public void CommitNodeChanges()
-        {
-            _nodeManager.SaveCurrentMetadata();
-        }
-
 
         public void RefreshDevices()
         {
@@ -200,12 +207,12 @@ namespace BayMax.Services
             });
         }
 
-        public async Task<JsonElement> CheckNodesAsync(Device device, List<string> types)
+        public async Task<JsonElement> CheckNodesAsync(Device device, Dictionary<string, long> nodesData)
         {
             return await Task.Run(() =>
             {
                 var conn = GetOrCreateConnection(device);
-                return conn.SendCheckNodesCommand(types);
+                return conn.SendCheckNodesCommand(nodesData);
             });
         }
 
