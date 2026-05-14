@@ -20,11 +20,12 @@ namespace BayMax.Services
         private readonly Dictionary<string, BayMaxConnection> _connections = new Dictionary<string, BayMaxConnection>();
 
         public ObservableCollection<Device> AvailableDevices { get; } = new ObservableCollection<Device>();
-        public ObservableCollection<Device> ProjectDevices { get; } = new ObservableCollection<Device>();
 
         public string AppPublicKey => _security.PublicKeyBase64;
 
         public List<CustomPythonNode> AvailablePythonNodes => _nodeManager.AvailableNodes;
+
+        public event Action DevicesUpdated;
 
         //public event Action<string> OnDeviceReady;   
 
@@ -79,18 +80,20 @@ namespace BayMax.Services
             return _connections[device.Ip];
         }
 
-        private async void HandleDiscoveredDevices(List<DiscoveryService.AgentBeacon> beacons)
+        public async void HandleDiscoveredDevices(List<DiscoveryService.AgentBeacon> beacons)
         {
-            var currentDevices = new List<Device>();
-            Application.Current.Dispatcher.Invoke(() => currentDevices = AvailableDevices.ToList());
-
-            var checkedDevices = await Task.Run(() =>
+            var results = await Task.Run(() =>
             {
-                var results = new List<(Device dev, ConnectionStatus status)>();
+                List<Device> snapshot;
+                lock (AvailableDevices)
+                {
+                    snapshot = AvailableDevices.ToList();
+                }
 
                 foreach (var beacon in beacons)
                 {
-                    var existing = currentDevices.FirstOrDefault(d => d.Ip == beacon.ip_address);
+                    var existing = snapshot.FirstOrDefault(d => d.Ip == beacon.ip_address);
+                    
                     if (existing != null)
                     {
                         existing.Name = beacon.agent_name;
@@ -99,64 +102,86 @@ namespace BayMax.Services
                     }
                     else
                     {
-                        currentDevices.Add(new Device
+                        snapshot.Add(new Device
                         {
                             Name = beacon.agent_name,
                             Ip = beacon.ip_address,
                             Port = beacon.zmq_port,
-                            PublicKey = beacon.public_key
+                            PublicKey = beacon.public_key,
                         });
                     }
                 }
 
-                foreach (var device in currentDevices)
-                {
-                    var connection = GetOrCreateConnection(device);
-                    var status = connection.SendCheckAuthorizationCommand();
+                var checkResults = new List<(Device dev, ConnectionStatus status)>();
 
-                    results.Add((device, status));
+                foreach (var device in snapshot)
+                {
+
+                    if (string.IsNullOrEmpty(device.PublicKey) || device.Port == 0)
+                    {
+                        checkResults.Add((device, ConnectionStatus.Offline));
+                        continue;
+                    }
+
+                    try
+                    {
+                        var connection = GetOrCreateConnection(device);
+                        var status = connection.SendCheckAuthorizationCommand();
+                        checkResults.Add((device, status));
+                    }
+                    catch
+                    {
+                        checkResults.Add((device, ConnectionStatus.Offline));
+                    }
                 }
 
-                return results;
+                return checkResults;
             });
+
+
 
             Application.Current.Dispatcher.Invoke(() =>
             {
-                foreach (var item in checkedDevices)
+                foreach (var item in results)
                 {
                     var device = item.dev;
                     var status = item.status;
 
-                    if (status == ConnectionStatus.Offline)
-                    {
-                        var toRemove = AvailableDevices.FirstOrDefault(d => d.Ip == device.Ip);
-                        if (toRemove != null)
-                        {
-                            AvailableDevices.Remove(toRemove);
-                            ProjectDevices.Remove(toRemove);
-                            DisconnectDevice(toRemove.Ip);
-                        }
-                        continue; 
-                    }
-
                     var existingUI = AvailableDevices.FirstOrDefault(d => d.Ip == device.Ip);
+
                     if (existingUI == null)
                     {
-                        device.IsAuthorized = (status == ConnectionStatus.Authorized);
-                        device.LastSeen = DateTime.Now;
                         AvailableDevices.Add(device);
+                        existingUI = device;
+                    }
+
+                    if (status == ConnectionStatus.Offline)
+                    {
+                        DeviceOffline(existingUI);
                     }
                     else
                     {
-                        existingUI.Name = device.Name;
-                        existingUI.Port = device.Port;
-                        existingUI.PublicKey = device.PublicKey;
+                        LoggerService.Log("Online");
+                        existingUI.IsOnline = true;
                         existingUI.IsAuthorized = (status == ConnectionStatus.Authorized);
                     }
                 }
 
-                SortDevices();
+                DevicesUpdated?.Invoke();
             });
+        }
+
+        public void DeviceOffline(Device device)
+        {
+            LoggerService.Log("Offline");
+            DisconnectDevice(device.Ip);
+            device.IsOnline = false;
+            device.IsAuthorized = false;
+
+            if (!device.IsInProject)
+            {
+                AvailableDevices.Remove(device);
+            }
         }
 
         public async Task<ConnectionStatus> CheckAutorizationAsync(Device device)
@@ -234,29 +259,19 @@ namespace BayMax.Services
             }
         }
 
-        public void SortDevices()
-        {
-            var sorted = AvailableDevices.OrderByDescending(d => d.IsInProject).ThenByDescending(d => d.IsAuthorized).ThenBy(d => d.Name).ToList();
-            for (int i = 0; i < sorted.Count; i++)
-            {
-                int oldIndex = AvailableDevices.IndexOf(sorted[i]);
-                if (oldIndex != i) AvailableDevices.Move(oldIndex, i);
-            }
-        }
-
         public void StartNetBridge() => _netBridge.Start();
         public void StopNetBridge() => _netBridge.Stop();
         public int GetBridgePort(string pinId) => _netBridge.GetPublisherPort(pinId);
         public void SendBridgeData(string pinId, string data) => _netBridge.SendData(pinId, data);
         public void ConnectBridgeToAgent(string pinId, string addr, Action<string> callback) => _netBridge.ConnectToAgent(pinId, addr, callback);
 
-        public async Task StopProjectAsync()
+        public async Task StopProjectAsync(IEnumerable<Device> targetDevices)
         {
             StopNetBridge();
 
             var stopTasks = new List<Task>();
 
-            foreach (var device in ProjectDevices)
+            foreach (var device in targetDevices)
             {
                 stopTasks.Add(Task.Run(() =>
                 {

@@ -12,6 +12,8 @@ namespace BayMax.Models
         public string PublicKey { get; set; }
         public DateTime LastSeen { get; set; } = DateTime.Now;
 
+        public bool IsOnline { get; set; } = false;
+
         private bool _isAuthorized;
         public bool IsAuthorized
         {

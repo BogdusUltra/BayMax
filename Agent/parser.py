@@ -20,6 +20,7 @@ def parse_nodes(folder_path):
                     "category": "Custom",
                     "inputs": [],
                     "outputs": [],
+                    "parameters": [],
                     "source_code": open(path, "r", encoding="utf-8").read()
                 }
 
@@ -39,6 +40,23 @@ def parse_nodes(folder_path):
                                 node_info["outputs"].append(pin_info)
                             else:
                                 node_info["inputs"].append(pin_info)
+
+                        elif item.func.attr == "create_parameter":
+                            p_name = item.args[0].value
+                            p_type = "text"
+                            p_default = ""
+
+                            for kw in item.keywords:
+                                if kw.arg == "param_type" and hasattr(kw.value, 'value'):
+                                    p_type = kw.value.value
+                                if kw.arg == "default_value" and hasattr(kw.value, 'value'):
+                                    p_default = kw.value.value
+
+                            node_info["parameters"].append({
+                                "name": p_name,
+                                "type": p_type,
+                                "default": str(p_default)
+                            })
 
                 schema.append(node_info)
 

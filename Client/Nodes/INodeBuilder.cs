@@ -10,6 +10,6 @@ namespace BayMax.Nodes
         string NodeName { get; } 
         string Category { get; }
 
-        NodeBlock CreateNode();
+        public NodeBlock CreateNode();
     }
 }

@@ -15,6 +15,8 @@ namespace BayMax.Nodes.UINodes
         {
             var node = new NodeBlock(NodeType.UI, "Инспектор JSON");
 
+            node.LogicNodeTypeName = NodeName;
+
             var inPin = node.AddPin("Данные", PinType.Input, PinDataType.Json);
 
             var textBox = new TextBox

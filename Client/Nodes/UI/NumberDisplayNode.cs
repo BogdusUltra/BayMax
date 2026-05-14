@@ -14,6 +14,8 @@ namespace BayMax.Nodes.UINodes
         {
             var node = new NodeBlock(NodeType.UI, "Индикатор числа");
 
+            node.LogicNodeTypeName = NodeName;
+
             // Создаем входной пин типа Number
             var inputPin = node.AddPin("Значение", PinType.Input, PinDataType.Number);
 

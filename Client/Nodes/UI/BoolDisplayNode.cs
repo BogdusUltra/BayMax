@@ -14,6 +14,8 @@ namespace BayMax.Nodes.UINodes
         {
             var node = new NodeBlock(NodeType.UI, "Статус");
 
+            node.LogicNodeTypeName = NodeName;
+
             var inPin = node.AddPin("Вход", PinType.Input, PinDataType.Boolean);
 
             var textBlock = new TextBlock

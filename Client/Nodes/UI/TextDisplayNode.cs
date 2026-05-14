@@ -14,6 +14,8 @@ namespace BayMax.Nodes.UI
         {
             var node = new NodeBlock(NodeType.UI, NodeName);
 
+            node.LogicNodeTypeName = NodeName;
+
             node.Width = 200;
             node.Height = 150;
 

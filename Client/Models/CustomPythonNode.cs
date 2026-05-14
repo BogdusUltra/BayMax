@@ -11,6 +11,17 @@ namespace BayMax.Models
         [JsonPropertyName("data_type")]
         public string DataType { get; set; }
     }
+    public class NodeParameterMetadata
+    {
+        [JsonPropertyName("name")]
+        public string Name { get; set; }
+
+        [JsonPropertyName("type")]
+        public string Type { get; set; }
+
+        [JsonPropertyName("default")]
+        public string Default { get; set; }
+    }
     public class CustomPythonNode
     {
         [JsonPropertyName("Name")]
@@ -43,6 +54,9 @@ namespace BayMax.Models
 
         [JsonIgnore]
         public long LastModifiedTimestamp { get; set; }
+
+        [JsonPropertyName("parameters")]
+        public List<NodeParameterMetadata> Parameters { get; set; } = new List<NodeParameterMetadata>();
     }
 
 

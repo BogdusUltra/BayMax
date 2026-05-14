@@ -45,6 +45,14 @@ def run_node_process(node_data, status_queue, stop_event):
         NodeClass = NODE_REGISTRY[node_type]
         my_node = NodeClass(name=node_id)
 
+        for p_name, p_val in node_data.get("parameters", {}).items():
+            if str(p_val).lower() == "true":
+                p_val = True
+            elif str(p_val).lower() == "false":
+                p_val = False
+
+            my_node.parameters[p_name] = p_val
+
         for topic, port in node_data.get("publishers", {}).items():
             my_node.set_publisher_port(topic, port)
 

@@ -14,6 +14,8 @@ namespace BayMax.Nodes.UINodes
         {
             var node = new NodeBlock(NodeType.UI, "Тумблер");
 
+            node.LogicNodeTypeName = NodeName;
+
             // Создаем выходной пин типа Boolean
             var outPin = node.AddPin("Состояние", PinType.Output, PinDataType.Boolean);
 
@@ -45,6 +47,19 @@ namespace BayMax.Nodes.UINodes
 
             // Инициализация стартового значения
             outPin.SetValue(false);
+
+            node.OnSaveSettings = () =>
+            {
+                node.Settings["BoolValue"] = checkBox.IsChecked.ToString();
+            };
+
+            node.OnLoadSettings = () =>
+            {
+                if (node.Settings.TryGetValue("BoolValue", out string savedBool) && bool.TryParse(savedBool, out bool isChecked))
+                {
+                    checkBox.IsChecked = isChecked;
+                }
+            };
 
             return node;
         }

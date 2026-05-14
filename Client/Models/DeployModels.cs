@@ -30,5 +30,8 @@ namespace BayMax.Models
 
         [JsonPropertyName("subscribers")]
         public Dictionary<string, string> Subscribers { get; set; } = new Dictionary<string, string>();
+
+        [JsonPropertyName("parameters")]
+        public Dictionary<string, string> Parameters { get; set; } = new Dictionary<string, string>();
     }
 }

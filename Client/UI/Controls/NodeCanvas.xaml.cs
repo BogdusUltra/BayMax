@@ -1,5 +1,7 @@
-﻿using BayMax.Nodes;
+﻿using BayMax.Models;
+using BayMax.Nodes;
 using BayMax.Services;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,7 +31,13 @@ namespace BayMax.UI.Controls
         private Point _panMouseStartPoint;
         private Point _panTranslateStartPoint;
 
+        public ObservableCollection<Device> ProjectDevices { get; } = new ObservableCollection<Device>();
+
         public bool IsDeployed { get; set; } = false;
+        public string FilePath { get; set; } = null;
+
+        public bool IsDirty { get; private set; } = false;
+        public event Action IsDirtyChanged;
 
         public NodeCanvas()
         {
@@ -111,6 +119,174 @@ namespace BayMax.UI.Controls
                 }
 
                 UpdateLinesForNode(node); 
+            }
+        }
+
+        public ProjectData GetProjectData()
+        {
+            var data = new ProjectData
+            {
+                ProjectName = "Новый Проект",
+                SaveTime = DateTime.Now
+            };
+
+            foreach (NodeBlock node in DrawArea.Children.OfType<NodeBlock>())
+            {
+                node.OnSaveSettings?.Invoke();
+                var nData = new NodeData
+                {
+                    Id = node.Id,
+                    Type = node.Type.ToString(),
+                    LogicTypeName = node.LogicNodeTypeName,
+                    X = Canvas.GetLeft(node),
+                    Y = Canvas.GetTop(node),
+                    Width = node.ActualWidth,
+                    Height = node.ActualHeight,
+                    Settings = new Dictionary<string, string>(node.Settings)
+                };
+
+                foreach (var pin in node.Pins)
+                {
+                    nData.SavedPinIds.Add(pin.Id);
+                }
+
+                data.Nodes.Add(nData);
+            }
+
+            foreach (var conn in Connections)
+            {
+                data.Connections.Add(new ConnectionData
+                {
+                    StartNodeId = conn.StartPin.ParentNode.Id,
+                    StartPinId = conn.StartPin.Id,
+                    EndNodeId = conn.EndPin.ParentNode.Id,
+                    EndPinId = conn.EndPin.Id
+                });
+            }
+
+            return data;
+        }
+
+        public void ClearCanvas()
+        {
+            foreach (var conn in Connections.ToList())
+            {
+                DrawArea.Children.Remove(conn.PathElement);
+            }
+            Connections.Clear();
+
+            var nodes = DrawArea.Children.OfType<NodeBlock>().ToList();
+            foreach (var node in nodes)
+            {
+                DrawArea.Children.Remove(node);
+            }
+
+            ClearSelection();
+        }
+
+        public void LoadProjectData(ProjectData data)
+        {
+            ClearCanvas();
+
+            // Словарь для быстрого поиска нод по ID при создании связей
+            var nodeMap = new Dictionary<string, NodeBlock>();
+
+            foreach (var nData in data.Nodes)
+            {
+                NodeBlock newNode = null;
+
+                if (nData.Type == "UI")
+                {
+                    var builder = NodeRegistry.AvailableNodes.FirstOrDefault(b => b.NodeName == nData.LogicTypeName);
+                    if (builder != null) newNode = builder.CreateNode();
+                }
+                else
+                {
+                    var meta = _core.AvailablePythonNodes.FirstOrDefault(m => m.Name == nData.LogicTypeName);
+                    if (meta != null)
+                    {
+                        newNode = new NodeBlock(NodeType.Logic, meta.Title) { LogicNodeTypeName = meta.Name };
+
+                        foreach (var i in meta.Inputs) newNode.AddPin(i.Name, PinType.Input, Enum.Parse<PinDataType>(i.DataType, true));
+                        foreach (var o in meta.Outputs) newNode.AddPin(o.Name, PinType.Output, Enum.Parse<PinDataType>(o.DataType, true));
+
+                        SetupPythonNodeUI(newNode, meta);
+                    }
+                }
+
+                if (newNode != null)
+                {
+                    newNode.Id = nData.Id;
+
+                    for (int i = 0; i < nData.SavedPinIds.Count; i++)
+                    {
+                        if (i < newNode.Pins.Count)
+                        {
+                            newNode.Pins[i].Id = nData.SavedPinIds[i];
+                        }
+                    }
+
+                    newNode.Settings = nData.Settings;
+                    newNode.OnLoadSettings?.Invoke();
+
+                    if (newNode.Type == NodeType.Logic && newNode.Settings.TryGetValue("_TargetDeviceIp", out string targetIp))
+                    {
+                        var device = ProjectDevices.FirstOrDefault(d => d.Ip == targetIp);
+                        if (device != null)
+                        {
+                            newNode.DeviceSelector.SelectedItem = device;
+                        }
+                    }
+
+                    if (nData.Width > 0) newNode.Width = nData.Width;
+                    if (nData.Height > 0) newNode.Height = nData.Height;
+
+                    SpawnNode(newNode, new Point(nData.X, nData.Y));
+                    nodeMap[newNode.Id] = newNode;
+                }
+            }
+            DrawArea.UpdateLayout();
+
+            foreach (var cData in data.Connections)
+            {
+                if (nodeMap.TryGetValue(cData.StartNodeId, out var startNode) &&
+                    nodeMap.TryGetValue(cData.EndNodeId, out var endNode))
+                {
+                    var startPin = startNode.Pins.FirstOrDefault(p => p.Id == cData.StartPinId);
+                    var endPin = endNode.Pins.FirstOrDefault(p => p.Id == cData.EndPinId);
+
+                    if (startPin != null && endPin != null)
+                    {
+                        var line = new ConnectionLine(startPin) { EndPin = endPin };
+                        startPin.AddConnection();
+                        endPin.AddConnection();
+
+                        DrawArea.Children.Add(line.PathElement);
+                        Connections.Add(line);
+
+                        UpdateLinesForNode(startNode);
+                    }
+                }
+            }
+
+            ClearDirty();
+        }
+
+        public void MarkAsDirty()
+        {
+            if (!IsDirty)
+            {
+                IsDirty = true;
+                IsDirtyChanged?.Invoke();
+            }
+        }
+
+        public void ClearDirty()
+        {
+            if (IsDirty)
+            {
+                IsDirty = false;
+                IsDirtyChanged?.Invoke();
             }
         }
 
@@ -211,32 +387,6 @@ namespace BayMax.UI.Controls
             {
                 menu.Items.Add(new MenuItem { Header = "Python нод не найдено", IsEnabled = false });
             }
-        }
-
-        public void SpawnCustomNode(Models.CustomPythonNode meta)
-        {
-            // Создаем логическую ноду (зеленую)
-            var newNode = new NodeBlock(NodeType.Logic, meta.Title);
-
-            // ВАЖНО: Запоминаем системное имя для Архитектора
-            newNode.LogicNodeTypeName = meta.Name;
-
-            // Генерируем входные пины
-            foreach (var input in meta.Inputs)
-            {
-                if (!Enum.TryParse(input.DataType, true, out PinDataType pType)) pType = PinDataType.Any;
-                newNode.AddPin(input.Name, PinType.Input, pType);
-            }
-
-            // Генерируем выходные пины
-            foreach (var output in meta.Outputs)
-            {
-                if (!Enum.TryParse(output.DataType, true, out PinDataType pType)) pType = PinDataType.Any;
-                newNode.AddPin(output.Name, PinType.Output, pType);
-            }
-
-            // Спавним на холсте (используя твой существующий метод)
-            SpawnNode(newNode);
         }
 
         private void BuildSingleNodeMenu(ContextMenu menu)
@@ -497,6 +647,8 @@ namespace BayMax.UI.Controls
 
                     _draftLine.UpdatePosition(startPos, endPos);
                     Connections.Add(_draftLine);
+
+                    MarkAsDirty();
                 }
                 else
                 {
@@ -621,13 +773,107 @@ namespace BayMax.UI.Controls
             SpawnNode(newNode);
         }
 
-        private void SpawnNode(NodeBlock node)
+        private void SpawnNode(NodeBlock node, Point? position = null)
         {
             node.Moved += () => UpdateLinesForNode(node);
             node.Resized += () => UpdateLinesForNode(node);
-            Canvas.SetLeft(node, _rightClickPoint.X);
-            Canvas.SetTop(node, _rightClickPoint.Y);
+            Point finalPos = position ?? _rightClickPoint;
+            Canvas.SetLeft(node, finalPos.X);
+            Canvas.SetTop(node, finalPos.Y);
             DrawArea.Children.Add(node);
+            MarkAsDirty();
+        }
+
+        public void SpawnCustomNode(CustomPythonNode meta)
+        {
+            var newNode = new NodeBlock(NodeType.Logic, meta.Title);
+            newNode.LogicNodeTypeName = meta.Name;
+
+            foreach (var input in meta.Inputs)
+            {
+                if (!Enum.TryParse(input.DataType, true, out PinDataType pType)) pType = PinDataType.Any;
+                newNode.AddPin(input.Name, PinType.Input, pType);
+            }
+            foreach (var output in meta.Outputs)
+            {
+                if (!Enum.TryParse(output.DataType, true, out PinDataType pType)) pType = PinDataType.Any;
+                newNode.AddPin(output.Name, PinType.Output, pType);
+            }
+
+            SetupPythonNodeUI(newNode, meta);
+
+            SpawnNode(newNode);
+        }
+
+        private void SetupPythonNodeUI(NodeBlock node, CustomPythonNode meta)
+        {
+            var settingsPanel = new StackPanel { Margin = new Thickness(5) };
+            var uiControls = new Dictionary<string, Control>();
+
+            foreach (var param in meta.Parameters)
+            {
+                settingsPanel.Children.Add(new TextBlock
+                {
+                    Text = param.Name,
+                    Foreground = Brushes.Gray,
+                    FontSize = 10,
+                    Margin = new Thickness(0, 5, 0, 2),
+                    HorizontalAlignment = HorizontalAlignment.Left
+                });
+
+                if (param.Type == "bool")
+                {
+                    var cb = new CheckBox
+                    {
+                        IsChecked = bool.Parse(param.Default),
+                        Margin = new Thickness(0, 0, 0, 5)
+                    };
+                    settingsPanel.Children.Add(cb);
+                    uiControls[param.Name] = cb;
+                }
+                else // text / number
+                {
+                    var tb = new TextBox
+                    {
+                        Text = param.Default,
+                        Margin = new Thickness(0, 0, 0, 5),
+                        Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
+                        Foreground = Brushes.White,
+                        BorderThickness = new Thickness(1),
+                        BorderBrush = Brushes.DimGray,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        Padding = new Thickness(3)
+                    };
+                    settingsPanel.Children.Add(tb);
+                    uiControls[param.Name] = tb;
+                }
+            }
+
+            node.SetContent(settingsPanel);
+
+            // Привязываем логику сохранения
+            node.OnSaveSettings = () =>
+            {
+                foreach (var ctrl in uiControls)
+                {
+                    if (ctrl.Value is CheckBox cb) node.Settings[ctrl.Key] = cb.IsChecked.ToString();
+                    else if (ctrl.Value is TextBox tb) node.Settings[ctrl.Key] = tb.Text;
+                }
+                if (node.TargetDevice != null) node.Settings["_TargetDeviceIp"] = node.TargetDevice.Ip;
+            };
+
+            // Привязываем логику загрузки
+            node.OnLoadSettings = () =>
+            {
+                foreach (var ctrl in uiControls)
+                {
+                    if (node.Settings.TryGetValue(ctrl.Key, out string val))
+                    {
+                        if (ctrl.Value is CheckBox cb) cb.IsChecked = bool.Parse(val);
+                        else if (ctrl.Value is TextBox tb) tb.Text = val;
+                    }
+                }
+            };
         }
 
         private void UpdateLinesForNode(NodeBlock node)

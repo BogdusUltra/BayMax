@@ -133,10 +133,28 @@ namespace BayMax.Services
 
                     foreach (NodeBlock node in group)
                     {
+                        node.OnSaveSettings?.Invoke();
+
                         var dNode = new DeployNode { Id = node.Id, Type = node.LogicNodeTypeName };
 
                         var meta = availablePythonNodes.FirstOrDefault(n => n.Name == node.LogicNodeTypeName);
                         if (meta == null) continue;
+
+                        if (meta.Parameters != null)
+                        {
+                            foreach (var param in meta.Parameters)
+                            {
+                                if (node.Settings.TryGetValue(param.Name, out string val))
+                                {
+                                    dNode.Parameters[param.Name] = val;
+                                }
+                                else
+                                {
+                                    // Если пусто, отправляем дефолтное значение
+                                    dNode.Parameters[param.Name] = param.Default;
+                                }
+                            }
+                        }
 
                         var outPins = node.OutputPinsContainer.Children.OfType<NodePin>().ToList();
                         for (int i = 0; i < outPins.Count; i++)

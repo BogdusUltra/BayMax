@@ -14,6 +14,8 @@ namespace BayMax.Nodes.UI
         {
             var node = new NodeBlock(NodeType.UI, NodeName);
 
+            node.LogicNodeTypeName = NodeName;
+
             node.Width = 150;
             node.Height = 100;
 
@@ -45,6 +47,20 @@ namespace BayMax.Nodes.UI
             };
 
             node.SetContent(textBox);
+
+            node.OnSaveSettings = () =>
+            {
+                node.Settings["NumberValue"] = textBox.Text;
+            };
+
+            node.OnLoadSettings = () =>
+            {
+                if (node.Settings.TryGetValue("NumberValue", out string savedNum))
+                {
+                    textBox.Text = savedNum;
+                }
+            };
+
             return node;
         }
     }

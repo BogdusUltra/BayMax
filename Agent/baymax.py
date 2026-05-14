@@ -11,6 +11,8 @@ class RobotNode:
         self.publishers = {}
         self.subscribers = {}
         self._stop_event = None
+        self.parameters = {}
+
 
     def is_running(self):
         if self._stop_event is not None:
@@ -30,6 +32,9 @@ class RobotNode:
     def set_subscriber_address(self, topic_name, address):
         if topic_name in self._sub_config:
             self._sub_config[topic_name]["address"] = address
+
+    def create_parameter(self, name, param_type="text", default_value=""):
+        self.parameters[name] = default_value
 
     def _setup_network(self):
         self.context = zmq.Context()

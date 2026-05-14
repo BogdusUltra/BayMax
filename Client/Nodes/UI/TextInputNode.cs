@@ -14,6 +14,9 @@ namespace BayMax.Nodes.UI
         public NodeBlock CreateNode()
         {
             var node = new NodeBlock(NodeType.UI, NodeName);
+
+            node.LogicNodeTypeName = NodeName;
+
             node.Width = 200;
             node.Height = 150;
 
@@ -73,8 +76,27 @@ namespace BayMax.Nodes.UI
 
             panel.Children.Add(streamToggle);
             panel.Children.Add(textBox);
-
             node.SetContent(panel);
+
+            node.OnSaveSettings = () =>
+            {
+                node.Settings["TextValue"] = textBox.Text;
+                node.Settings["IsStreaming"] = streamToggle.IsChecked.ToString();
+            };
+
+            node.OnLoadSettings = () =>
+            {
+                if (node.Settings.TryGetValue("TextValue", out string savedText))
+                {
+                    textBox.Text = savedText;
+                }
+
+                if (node.Settings.TryGetValue("IsStreaming", out string isStreamStr) && bool.TryParse(isStreamStr, out bool isStreaming))
+                {
+                    streamToggle.IsChecked = isStreaming;
+                }
+            };
+
             return node;
         }
     }

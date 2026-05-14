@@ -1,8 +1,12 @@
-﻿using System.Windows;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Controls.Primitives;
+using BayMax.Models;
 
 namespace BayMax.UI.Controls
 {
@@ -25,13 +29,18 @@ namespace BayMax.UI.Controls
         private Point _clickPosition;
 
         public NodeType Type { get; private set; }
-        public string Id { get; } = Guid.NewGuid().ToString("N");
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string LogicNodeTypeName { get; set; } = "UnknownNode";
 
         public List<NodePin> Pins { get; } = new List<NodePin>();
 
         public event Action Moved;
         public event Action Resized;
+
+        public Dictionary<string, string> Settings { get; set; } = new Dictionary<string, string>();
+
+        public Action OnSaveSettings { get; set; }
+        public Action OnLoadSettings { get; set; }
 
         public Models.Device TargetDevice { get; private set; }
         public bool IsSelected { get; private set; }
@@ -43,6 +52,55 @@ namespace BayMax.UI.Controls
 
             Type = type;
             SetupVisuals(title);
+
+            // === ФИКС 1: Ждем, пока нода не появится на конкретном холсте (вкладке) ===
+            this.Loaded += NodeBlock_Loaded;
+        }
+
+        private void NodeBlock_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Отписываемся, чтобы логика не срабатывала повторно при перерисовках интерфейса
+            this.Loaded -= NodeBlock_Loaded;
+
+            if (Type == NodeType.Logic)
+            {
+                // Ищем холст (вкладку), на котором находится эта нода
+                var canvas = this.FindParent<NodeCanvas>();
+                if (canvas != null)
+                {
+                    // Привязываем выпадающий список машин к списку ИМЕННО ЭТОЙ вкладки
+                    DeviceSelector.ItemsSource = canvas.ProjectDevices;
+
+                    // Восстанавливаем выбранную машину из сохранения
+                    if (Settings.TryGetValue("_TargetDeviceIp", out string savedIp))
+                    {
+                        var device = canvas.ProjectDevices.FirstOrDefault(d => d.Ip == savedIp);
+                        if (device != null) DeviceSelector.SelectedItem = device;
+                    }
+                    else if (canvas.ProjectDevices.Count > 0 && DeviceSelector.SelectedItem == null)
+                    {
+                        // Автовыбор первой машины, если ничего не сохранено
+                        DeviceSelector.SelectedIndex = 0;
+                    }
+                }
+            }
+        }
+
+        private void SetupVisuals(string title)
+        {
+            if (Type == NodeType.UI)
+            {
+                NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2dd5e1"));
+                NodeTitle.Text = title;
+                DeviceSelector.Visibility = Visibility.Collapsed;
+            }
+            else if (Type == NodeType.Logic)
+            {
+                NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A7FC00"));
+                NodeTitle.Text = $"[Логика] {title}";
+                DeviceSelector.Visibility = Visibility.Visible;
+                // ФИКС 2: Убрана прямая привязка к MainWindow, теперь все делается в NodeBlock_Loaded
+            }
         }
 
         public void SetContent(UIElement customUI)
@@ -66,7 +124,7 @@ namespace BayMax.UI.Controls
                 {
                     NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#e1ff85"));
                 }
-                
+
                 NodeBorder.BorderThickness = new Thickness(3);
             }
             else
@@ -83,46 +141,30 @@ namespace BayMax.UI.Controls
             if (double.IsNaN(this.Width)) this.Width = this.ActualWidth;
             if (double.IsNaN(this.Height)) this.Height = this.ActualHeight;
 
-            double newWidth = this.Width + e.HorizontalChange;
-            double newHeight = this.Height + e.VerticalChange;
+            double targetWidth = this.Width + e.HorizontalChange;
+            double targetHeight = this.Height + e.VerticalChange;
 
+            CustomContentContainer.Measure(new Size(targetWidth, double.PositiveInfinity));
+
+            double contentMinWidth = CustomContentContainer.DesiredSize.Width + 40;
+            double extraWidth = this.ActualWidth - CustomContentContainer.ActualWidth;
+
+            // Защита от деления на ноль до полной отрисовки
+            if (extraWidth <= 0 || double.IsNaN(extraWidth)) extraWidth = 60;
+
+            double contentMinHeight = CustomContentContainer.DesiredSize.Height + 40;
             int maxPins = Math.Max(InputPinsContainer.Children.Count, OutputPinsContainer.Children.Count);
-            double minRequiredHeight = (maxPins * 15);
+            double minPinsHeight = (maxPins * 15) + 40;
 
-            double finalMinHeight = Math.Max(70, minRequiredHeight);
+            double minHeight = Math.Max(minPinsHeight, contentMinHeight);
+            double minWidth = Math.Max(100, contentMinWidth + extraWidth);
 
-            this.Width = Math.Max(120, newWidth);
-            this.Height = Math.Max(finalMinHeight, newHeight);
+            this.Width = Math.Max(minWidth, targetWidth);
+            this.Height = Math.Max(minHeight, targetHeight);
 
             Resized?.Invoke();
 
             e.Handled = true;
-        }
-
-        private void SetupVisuals(string title)
-        {
-            if (Type == NodeType.UI)
-            {
-                NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#2dd5e1")); 
-                NodeTitle.Text = title;
-                DeviceSelector.Visibility = Visibility.Collapsed;
-            }
-            else if (Type == NodeType.Logic)
-            {
-                NodeBorder.BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#A7FC00"));
-                NodeTitle.Text = $"[Логика] {title}";
-                DeviceSelector.Visibility = Visibility.Visible;
-                var mainWindow = Application.Current.MainWindow as MainWindow;
-                if (mainWindow != null && mainWindow.Core != null)
-                {
-                    DeviceSelector.ItemsSource = mainWindow.Core.ProjectDevices;
-
-                    if (mainWindow.Core.ProjectDevices.Count > 0)
-                    {
-                        DeviceSelector.SelectedIndex = 0;
-                    }
-                } 
-            }
         }
 
         private void DeviceSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -139,6 +181,10 @@ namespace BayMax.UI.Controls
                 DeviceSelector.BorderBrush = Brushes.Gray;
                 DeviceSelector.ToolTip = "Устройство для выполнения: " + TargetDevice?.Name;
             }
+
+            // === ФИКС 3: Если мы выбрали другого робота - помечаем проект как измененный ===
+            var canvas = this.FindParent<NodeCanvas>();
+            canvas?.MarkAsDirty();
         }
 
         private void BringToFront()
@@ -156,7 +202,7 @@ namespace BayMax.UI.Controls
                         {
                             maxZ = Z;
                         }
-                    } 
+                    }
                 }
 
                 Panel.SetZIndex(this, maxZ + 1);
@@ -259,20 +305,11 @@ namespace BayMax.UI.Controls
 
         private void DeleteNode_Click(object sender, RoutedEventArgs e)
         {
-            //MessageBoxResult result = MessageBox.Show(
-            //    "Вы уверены, что хотите удалить эту ноду и все её связи?",
-            //    "Подтверждение удаления",
-            //    MessageBoxButton.YesNo,
-            //    MessageBoxImage.Question);
-
-            //if (result == MessageBoxResult.Yes)
-            //{
             var canvas = this.FindParent<NodeCanvas>();
             if (canvas != null)
             {
                 canvas.DeleteNode(this);
             }
-            //}
 
             e.Handled = true;
         }
@@ -295,33 +332,22 @@ namespace BayMax.UI.Controls
             LockToggle.IsEnabled = !isDeployed;
             DeleteBtn.IsEnabled = !isDeployed;
 
-            if (isDeployed)
+            if (Type == NodeType.Logic)
             {
-                if (Type == NodeType.Logic) this.Opacity = 0.5;
-
-                if (Type == NodeType.UI)
-                {
-                    DeleteBtn.Opacity = 0.5;
-                    LockToggle.Opacity = 0.5;
-                }
-
-                InputPinsContainer.Opacity = 0.4;
-                OutputPinsContainer.Opacity = 0.4;
-
-                if (DeviceSelector != null) DeviceSelector.IsEnabled = false;
+                CustomContentContainer.IsEnabled = !isDeployed;
+                this.Opacity = isDeployed ? 0.7 : 1.0;
             }
             else
             {
-                this.Opacity = 1.0;
-
-                DeleteBtn.Opacity = 1.0;
-                LockToggle.Opacity = 1.0;
-
-                InputPinsContainer.Opacity = 1.0;
-                OutputPinsContainer.Opacity = 1.0;
-
-                if (DeviceSelector != null) DeviceSelector.IsEnabled = true;
+                // Для UI нод контент остается активным
+                DeleteBtn.Opacity = isDeployed ? 0.5 : 1.0;
+                LockToggle.Opacity = isDeployed ? 0.5 : 1.0;
             }
+
+            InputPinsContainer.Opacity = isDeployed ? 0.4 : 1.0;
+            OutputPinsContainer.Opacity = isDeployed ? 0.4 : 1.0;
+
+            if (DeviceSelector != null) DeviceSelector.IsEnabled = !isDeployed;
 
             foreach (var pin in Pins)
             {
@@ -331,10 +357,6 @@ namespace BayMax.UI.Controls
 
         public void RefreshStructure(Models.CustomPythonNode meta)
         {
-            //var oldConnections = Pins.Where(p => p.ConnectionCount > 0)
-            //                         .Select(p => new { p.Title, p.Type, p.DataType })
-            //                         .ToList();
-
             InputPinsContainer.Children.Clear();
             OutputPinsContainer.Children.Clear();
             Pins.Clear();
@@ -358,7 +380,7 @@ namespace BayMax.UI.Controls
 
             NodeTitle.Text = $"[Логика] {meta.Title}";
 
-            Resized?.Invoke(); 
+            Resized?.Invoke();
         }
     }
 }

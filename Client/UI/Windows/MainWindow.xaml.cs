@@ -12,35 +12,150 @@ using System.Windows.Navigation;
 using System.Windows.Shapes;
 using BayMax.Models;
 using System.Windows.Media.Animation;
+using System;
 
 namespace BayMax
 {
     public partial class MainWindow : Window
     {
-
         public BayMaxCore Core;
         private bool _isRefreshing = false;
 
         public MainWindow()
         {
             InitializeComponent();
-        
+
             Nodes.NodeRegistry.Initialize();
             Core = new BayMaxCore();
 
             TopMenu.BindCore(Core);
-            TopMenu.BindCanvas(MainEditor);
 
-            MainEditor.BindCore(Core);
+            AddNewTab("Новый проект");
 
             this.Activated += MainWindow_Activated;
-
             LoggerService.OnLog += HandleNewLog;
         }
 
+        // ==========================================
+        // ГОРЯЧИЕ КЛАВИШИ
+        // ==========================================
+        private void Window_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                if (e.Key == Key.N) { TopMenu.NewProject_Click(null, null); e.Handled = true; }
+                else if (e.Key == Key.O) { TopMenu.OpenProject_Click(null, null); e.Handled = true; }
+                else if (e.Key == Key.S) { TopMenu.SaveProject_Click(null, null); e.Handled = true; }
+            }
+        }
+
+        // ==========================================
+        // УПРАВЛЕНИЕ ВКЛАДКАМИ
+        // ==========================================
+        public void AddNewTab(string title = "Новый проект")
+        {
+            var newCanvas = new UI.Controls.NodeCanvas();
+            newCanvas.BindCore(Core);
+
+            newCanvas.IsDirtyChanged += () =>
+            {
+                string currentTitle = string.IsNullOrEmpty(newCanvas.FilePath) ? "Новый проект" : System.IO.Path.GetFileName(newCanvas.FilePath);
+                UpdateActiveTabTitle(currentTitle);
+            };
+
+            var tab = new TabItem
+            {
+                Header = title,
+                Content = newCanvas
+            };
+
+            ProjectTabs.Items.Add(tab);
+            ProjectTabs.SelectedItem = tab;
+        }
+
+        public bool FocusTabByFilePath(string filePath)
+        {
+            foreach (TabItem tab in ProjectTabs.Items)
+            {
+                if (tab.Content is UI.Controls.NodeCanvas canvas &&
+                    string.Equals(canvas.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    ProjectTabs.SelectedItem = tab;
+                    return true;
+                }
+            }
+            return false; 
+        }
+
+        private void CloseTab_Click(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+
+            var btn = sender as Button;
+            var tab = btn?.Tag as TabItem;
+
+            if (tab != null && tab.Content is UI.Controls.NodeCanvas canvas)
+            {
+                var previouslySelected = ProjectTabs.SelectedItem as TabItem;
+
+                if (canvas.IsDirty)
+                {
+                    ProjectTabs.SelectedItem = tab;
+
+                    string projectName = tab.Header.ToString().TrimEnd('*');
+                    var result = MessageBox.Show($"В проекте \"{projectName}\" есть несохраненные изменения. Сохранить перед закрытием?",
+                                                 "Сохранение", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+                    if (result == MessageBoxResult.Cancel) return;
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        TopMenu.SaveProject_Click(null, null);
+                        if (canvas.IsDirty) return;
+                    }
+                }
+
+                ProjectTabs.Items.Remove(tab);
+
+                if (previouslySelected != null && previouslySelected != tab && ProjectTabs.Items.Contains(previouslySelected))
+                {
+                    ProjectTabs.SelectedItem = previouslySelected;
+                }
+
+                if (ProjectTabs.Items.Count == 0)
+                {
+                    TopMenu.BindCanvas(null);
+                }
+            }
+        }
+
+        private void ProjectTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (ProjectTabs.SelectedItem is TabItem selectedTab && selectedTab.Content is UI.Controls.NodeCanvas activeCanvas)
+            {
+                TopMenu.BindCanvas(activeCanvas);
+            }
+        }
+
+        public void UpdateActiveTabTitle(string title)
+        {
+            if (ProjectTabs.SelectedItem is TabItem selectedTab && selectedTab.Content is UI.Controls.NodeCanvas activeCanvas)
+            {
+                selectedTab.Header = title + (activeCanvas.IsDirty ? "*" : "");
+            }
+        }
+
+        // ==========================================
+        // ОБНОВЛЕНИЕ НОД ПРИ ВОЗВРАТЕ В ОКНО
+        // ==========================================
         private async void MainWindow_Activated(object sender, EventArgs e)
         {
-            if (_isRefreshing || (MainEditor != null && MainEditor.IsDeployed)) return;
+            // Получаем текущий активный холст
+            UI.Controls.NodeCanvas activeCanvas = null;
+            if (ProjectTabs?.SelectedItem is TabItem selectedTab)
+            {
+                activeCanvas = selectedTab.Content as UI.Controls.NodeCanvas;
+            }
+
+            if (_isRefreshing || (activeCanvas != null && activeCanvas.IsDeployed)) return;
 
             try
             {
@@ -48,13 +163,20 @@ namespace BayMax
 
                 bool wasUpdated = await Core.AutoRefreshPythonNodesAsync();
 
-                if (wasUpdated)
+                if (wasUpdated && ProjectTabs != null)
                 {
-                    MainEditor.SyncLogicNodes();
+                    foreach (TabItem tab in ProjectTabs.Items)
+                    {
+                        if (tab.Content is UI.Controls.NodeCanvas canvas)
+                        {
+                            canvas.SyncLogicNodes();
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
+                // Игнорируем или логируем
             }
             finally
             {
@@ -62,6 +184,9 @@ namespace BayMax
             }
         }
 
+        // ==========================================
+        // ЛОГИКА КОНСОЛИ
+        // ==========================================
         public static readonly DependencyProperty ConsoleHeightProperty =
             DependencyProperty.Register("ConsoleHeight", typeof(double), typeof(MainWindow),
             new PropertyMetadata(0.0, OnConsoleHeightChanged));
@@ -99,7 +224,7 @@ namespace BayMax
             if (e.ChangedButton == MouseButton.Left && e.ClickCount == 2)
             {
                 CloseConsole();
-                e.Handled = true; 
+                e.Handled = true;
             }
         }
 
@@ -116,8 +241,8 @@ namespace BayMax
             var anim = new DoubleAnimation
             {
                 From = ConsoleRow.ActualHeight,
-                To = _lastConsoleHeight,      
-                Duration = TimeSpan.FromMilliseconds(450), 
+                To = _lastConsoleHeight,
+                Duration = TimeSpan.FromMilliseconds(450),
                 EasingFunction = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.3 }
             };
 

@@ -16,7 +16,7 @@ namespace BayMax.UI.Controls
         public PinDataType DataType { get; private set; }
         public string Title { get; private set; }
 
-        public string Id { get; } = Guid.NewGuid().ToString("N");
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
 
         public NodeBlock ParentNode => this.FindParent<NodeBlock>();
 
