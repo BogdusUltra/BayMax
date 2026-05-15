@@ -1,9 +1,10 @@
-﻿using System;
+﻿using BayMax.Utils;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
 
-namespace BayMax.Services
+namespace BayMax.Core
 {
     public class LocalAgentManager
     {
@@ -33,14 +34,14 @@ namespace BayMax.Services
                 _agentProcess.OutputDataReceived += (sender, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
-                        LoggerService.Log($"[ПИТОН]: {e.Data}");
+                        LoggerService.Global.Log($"[ПИТОН]: {e.Data}");
                 };
 
                 _agentProcess.ErrorDataReceived += (sender, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        LoggerService.Log($"[ПИТОН КРАШ] {e.Data}", LogLevel.Error);
+                        LoggerService.Global.Log($"[ПИТОН КРАШ] {e.Data}", LogLevel.Error);
                     }
                 };
 
@@ -49,11 +50,11 @@ namespace BayMax.Services
                 _agentProcess.BeginOutputReadLine();
                 _agentProcess.BeginErrorReadLine();
 
-                LoggerService.Log("Процесс локального агента успешно запущен.", LogLevel.Success);
+                LoggerService.Global.Log("Процесс локального агента успешно запущен.", LogLevel.Success);
             }
             catch (Exception ex)
             {
-                LoggerService.Log($"Сбой запуска процесса Питона: {ex.Message} (Путь: {pythonPath})", LogLevel.Error);
+                LoggerService.Global.Log($"Сбой запуска процесса Питона: {ex.Message} (Путь: {pythonPath})", LogLevel.Error);
             }
         }
 
@@ -64,7 +65,7 @@ namespace BayMax.Services
                 _agentProcess.Kill();
                 _agentProcess.Dispose();
                 _agentProcess = null;
-                LoggerService.Log("Локальный агент принудительно остановлен.", LogLevel.Warning);
+                LoggerService.Global.Log("Локальный агент принудительно остановлен.", LogLevel.Warning);
             }
         }
     }

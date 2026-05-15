@@ -1,9 +1,9 @@
-﻿using BayMax.UI.Controls;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
+using BayMax.UI.Components;
 using System.Windows.Media;
 
-namespace BayMax.Nodes.UINodes
+namespace BayMax.Nodes.UI
 {
     public class NumberDisplayNode : INodeBuilder
     {

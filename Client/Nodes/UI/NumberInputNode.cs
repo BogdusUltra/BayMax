@@ -1,7 +1,7 @@
 ﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using BayMax.UI.Controls;
+using BayMax.UI.Components;
 
 namespace BayMax.Nodes.UI
 {

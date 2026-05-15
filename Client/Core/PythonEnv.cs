@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 
-namespace BayMax.Services
+namespace BayMax.Core
 {
     public static class PythonEnv
     {

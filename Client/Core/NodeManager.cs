@@ -1,16 +1,17 @@
-﻿using BayMax.Models;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using BayMax.Models;
 using System.Linq;
 using System;
+using BayMax.Models;
+using BayMax.Utils;
 
-namespace BayMax.Services
+
+namespace BayMax.Core
 {
     public class NodeRegistryMetadata
     {
@@ -74,7 +75,7 @@ namespace BayMax.Services
 
             if (pythonPath == null || scriptPath == null)
             {
-                LoggerService.Log("Не удалось найти папку Agent или Питон!", LogLevel.Error);
+                LoggerService.Global.Log("Не удалось найти папку Agent или Питон!", LogLevel.Error);
                 return;
             }
 
@@ -96,7 +97,7 @@ namespace BayMax.Services
                 if (process?.ExitCode != 0)
                 {
                     string err = process?.StandardError.ReadToEnd();
-                    LoggerService.Log($"Ошибка парсера Python: {err}", LogLevel.Error);
+                    LoggerService.Global.Log($"Ошибка парсера Python: {err}", LogLevel.Error);
                     return;
                 }
             }
@@ -129,11 +130,11 @@ namespace BayMax.Services
                 }
 
                 AvailableNodes = validNodes;
-                LoggerService.Log($"Синхронизировано нод: {AvailableNodes?.Count ?? 0}", LogLevel.Success);
+                LoggerService.Global.Log($"Синхронизировано нод: {AvailableNodes?.Count ?? 0}", LogLevel.Success);
             }
             else
             {
-                LoggerService.Log("Файл nodes_schema.json не был создан!", LogLevel.Warning);
+                LoggerService.Global.Log("Файл nodes_schema.json не был создан!", LogLevel.Warning);
             }
         }
     }

@@ -6,7 +6,7 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 
 
-namespace BayMax.UI.Controls
+namespace BayMax.UI.Components
 {
     public class ConnectionLine
     {

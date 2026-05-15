@@ -1,4 +1,6 @@
-﻿using NetMQ;
+﻿
+using BayMax.Utils;
+using NetMQ;
 using NetMQ.Sockets;
 using System;
 using System.Collections.Generic;
@@ -22,7 +24,7 @@ namespace BayMax.Services
             Stop();
             _poller = new NetMQPoller();
             _poller.RunAsync();
-            LoggerService.Log("[UI МОСТ] Запущен с использованием NetMQPoller.", LogLevel.Info);
+            LoggerService.Global.Log("[UI МОСТ] Запущен с использованием NetMQPoller.", LogLevel.Info);
         }
 
         public int GetPublisherPort(string pinId)
@@ -33,7 +35,7 @@ namespace BayMax.Services
                 int port = pub.BindRandomPort("tcp://*");
                 _publishers[pinId] = pub;
                 _publisherPorts[pinId] = port;
-                LoggerService.Log($"[UI МОСТ] Открыт порт {port} для вывода данных (Пин: {pinId})", LogLevel.Debug);
+                LoggerService.Global.Log($"[UI МОСТ] Открыт порт {port} для вывода данных (Пин: {pinId})", LogLevel.Debug);
             }
             return _publisherPorts[pinId];
         }
@@ -65,7 +67,7 @@ namespace BayMax.Services
                 _subscribers[pinId] = sub;
                 _poller.Add(sub); // Отдаем сокет под управление поллеру
 
-                LoggerService.Log($"[UI МОСТ] Подписан на {address}", LogLevel.Debug);
+                LoggerService.Global.Log($"[UI МОСТ] Подписан на {address}", LogLevel.Debug);
             }
         }
 
@@ -73,7 +75,7 @@ namespace BayMax.Services
         {
             if (_poller != null)
             {
-                _poller.StopAsync();
+                _poller.Stop();
                 _poller.Dispose();
                 _poller = null;
             }

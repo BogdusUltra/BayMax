@@ -1,0 +1,11 @@
+<UserControl x:Class="BayMax.Workspaces.ProjectWorkspace"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:BayMax.Workspaces"
+             Background="#1E1E1E">
+    <Grid>
+        
+        
+        <controls:NodeCanvas x:Name="Canvas"/>
+    </Grid>
+</UserControl>

@@ -1,6 +1,8 @@
-﻿using BayMax.Models;
+﻿using BayMax;
+using BayMax.Models;
 using BayMax.Nodes;
 using BayMax.Services;
+using BayMax.UI.Components;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
@@ -9,11 +11,11 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
-namespace BayMax.UI.Controls
+namespace BayMax.Workspaces
 {
     public partial class NodeCanvas : UserControl
     {
-        private BayMaxCore _core;
+        private IEnumerable<CustomPythonNode> _availableNodes;
 
         private Point _rightClickPoint;
 
@@ -31,10 +33,9 @@ namespace BayMax.UI.Controls
         private Point _panMouseStartPoint;
         private Point _panTranslateStartPoint;
 
-        public ObservableCollection<Device> ProjectDevices { get; } = new ObservableCollection<Device>();
+        public ObservableCollection<Device> ProjectDevices { get; set; }
 
         public bool IsDeployed { get; set; } = false;
-        public string FilePath { get; set; } = null;
 
         public bool IsDirty { get; private set; } = false;
         public event Action IsDirtyChanged;
@@ -46,14 +47,19 @@ namespace BayMax.UI.Controls
             DrawArea.MouseRightButtonDown += OnCanvasRightClick;
         }
 
-        public void BindCore(BayMaxCore core)
+        public NodeBlock GetNodeByPin(NodePin pin)
         {
-            _core = core;
+            return DrawArea.Children.OfType<NodeBlock>().FirstOrDefault(n => n.Pins.Contains(pin));
+        }
+
+        public void SetAvailableNodes(IEnumerable<CustomPythonNode> nodes)
+        {
+            _availableNodes = nodes;
         }
 
         public void SyncLogicNodes()
         {
-            if (_core?.AvailablePythonNodes == null) return;
+            if (_availableNodes == null) return;
 
             var nodesOnCanvas = DrawArea.Children.OfType<NodeBlock>()
                                                  .Where(n => n.Type == NodeType.Logic)
@@ -61,22 +67,21 @@ namespace BayMax.UI.Controls
 
             foreach (var node in nodesOnCanvas)
             {
-                var freshMeta = _core.AvailablePythonNodes.FirstOrDefault(m => m.Name == node.LogicNodeTypeName);
+                var freshMeta = _availableNodes.FirstOrDefault(m => m.Name == node.LogicNodeTypeName);
                 if (freshMeta == null) continue;
 
-                var nodeConnections = Connections.Where(c => c.StartPin.ParentNode == node || c.EndPin.ParentNode == node).ToList();
-                var connectionMap = new List<(ConnectionLine line, string pinTitle, PinType pinType, PinDataType otherPinType)> ();
+                var nodeConnections = Connections.Where(c => GetNodeByPin(c.StartPin) == node || GetNodeByPin(c.EndPin) == node).ToList();
+                var connectionMap = new List<(ConnectionLine line, string pinTitle, PinType pinType, PinDataType otherPinType)>();
 
                 foreach (var conn in nodeConnections)
                 {
-                    if (conn.StartPin.ParentNode == node)
+                    if (GetNodeByPin(conn.StartPin) == node)
                         connectionMap.Add((conn, conn.StartPin.Title, PinType.Output, conn.EndPin.DataType));
                     else
                         connectionMap.Add((conn, conn.EndPin.Title, PinType.Input, conn.StartPin.DataType));
                 }
 
                 node.RefreshStructure(freshMeta);
-
                 node.UpdateLayout();
 
                 foreach (var entry in connectionMap)
@@ -118,17 +123,19 @@ namespace BayMax.UI.Controls
                     }
                 }
 
-                UpdateLinesForNode(node); 
+                UpdateLinesForNode(node);
             }
         }
 
-        public ProjectData GetProjectData()
+        public CanvasData GetCanvasData()
         {
-            var data = new ProjectData
-            {
-                ProjectName = "Новый Проект",
-                SaveTime = DateTime.Now
-            };
+            //var data = new ProjectData
+            //{
+            //    ProjectName = "Новый Проект",
+            //    SaveTime = DateTime.Now
+            //};
+
+            CanvasData canvasData = new CanvasData();
 
             foreach (NodeBlock node in DrawArea.Children.OfType<NodeBlock>())
             {
@@ -150,48 +157,31 @@ namespace BayMax.UI.Controls
                     nData.SavedPinIds.Add(pin.Id);
                 }
 
-                data.Nodes.Add(nData);
+                canvasData.Nodes.Add(nData);
             }
 
             foreach (var conn in Connections)
             {
-                data.Connections.Add(new ConnectionData
+                canvasData.Connections.Add(new ConnectionData
                 {
-                    StartNodeId = conn.StartPin.ParentNode.Id,
+                    StartNodeId = GetNodeByPin(conn.StartPin).Id,
                     StartPinId = conn.StartPin.Id,
-                    EndNodeId = conn.EndPin.ParentNode.Id,
+                    EndNodeId = GetNodeByPin(conn.EndPin).Id,
                     EndPinId = conn.EndPin.Id
                 });
             }
 
-            return data;
+            return canvasData;
         }
 
-        public void ClearCanvas()
-        {
-            foreach (var conn in Connections.ToList())
-            {
-                DrawArea.Children.Remove(conn.PathElement);
-            }
-            Connections.Clear();
-
-            var nodes = DrawArea.Children.OfType<NodeBlock>().ToList();
-            foreach (var node in nodes)
-            {
-                DrawArea.Children.Remove(node);
-            }
-
-            ClearSelection();
-        }
-
-        public void LoadProjectData(ProjectData data)
+        public void LoadCanvasData(CanvasData data)
         {
             ClearCanvas();
 
             // Словарь для быстрого поиска нод по ID при создании связей
             var nodeMap = new Dictionary<string, NodeBlock>();
 
-            foreach (var nData in data.Nodes)
+            foreach (NodeData nData in data.Nodes)
             {
                 NodeBlock newNode = null;
 
@@ -202,7 +192,7 @@ namespace BayMax.UI.Controls
                 }
                 else
                 {
-                    var meta = _core.AvailablePythonNodes.FirstOrDefault(m => m.Name == nData.LogicTypeName);
+                    var meta = _availableNodes.FirstOrDefault(m => m.Name == nData.LogicTypeName);
                     if (meta != null)
                     {
                         newNode = new NodeBlock(NodeType.Logic, meta.Title) { LogicNodeTypeName = meta.Name };
@@ -272,6 +262,23 @@ namespace BayMax.UI.Controls
             ClearDirty();
         }
 
+        public void ClearCanvas()
+        {
+            foreach (var conn in Connections.ToList())
+            {
+                DrawArea.Children.Remove(conn.PathElement);
+            }
+            Connections.Clear();
+
+            var nodes = DrawArea.Children.OfType<NodeBlock>().ToList();
+            foreach (var node in nodes)
+            {
+                DrawArea.Children.Remove(node);
+            }
+
+            ClearSelection();
+        }
+
         public void MarkAsDirty()
         {
             if (!IsDirty)
@@ -290,47 +297,37 @@ namespace BayMax.UI.Controls
             }
         }
 
-        private async void OnCanvasRightClick(object sender, MouseButtonEventArgs e)
+        private void OnCanvasRightClick(object sender, MouseButtonEventArgs e)
         {
             if (IsDeployed) return;
 
-            //bool wasUpdated = await _core.AutoRefreshPythonNodesAsync();
-            //if (wasUpdated)
-            //{
-            //    SyncLogicNodes();
-            //}
-
             _rightClickPoint = e.GetPosition(DrawArea);
-            DependencyObject clickedElement = e.OriginalSource as DependencyObject;
-            NodeBlock clickedNode = clickedElement.FindParent<NodeBlock>();
 
             var contextMenu = new ContextMenu();
-
-            if (clickedNode != null)
-            {
-                if (!SelectedNodes.Contains(clickedNode))
-                {
-                    SelectNode(clickedNode, false);
-                }
-
-                if (SelectedNodes.Count > 1)
-                {
-                    BuildGroupMenu(contextMenu);
-                }
-                else
-                {
-                    BuildSingleNodeMenu(contextMenu);
-                }
-            }
-            else
-            {
-                ClearSelection();
-                BuildCanvasMenu(contextMenu);
-            }
+            ClearSelection();
+            BuildCanvasMenu(contextMenu);
 
             contextMenu.PlacementTarget = DrawArea;
             contextMenu.IsOpen = true;
             e.Handled = true;
+        }
+
+        private void OnNodeRightClicked(NodeBlock clickedNode)
+        {
+            if (IsDeployed) return;
+
+            var contextMenu = new ContextMenu();
+
+            if (!SelectedNodes.Contains(clickedNode))
+            {
+                SelectNode(clickedNode, multiSelect: false);
+            }
+
+            if (SelectedNodes.Count > 1) BuildGroupMenu(contextMenu);
+            else BuildSingleNodeMenu(contextMenu);
+
+            contextMenu.PlacementTarget = DrawArea;
+            contextMenu.IsOpen = true;
         }
 
         private void BuildCanvasMenu(ContextMenu menu)
@@ -366,9 +363,9 @@ namespace BayMax.UI.Controls
                 menu.Items.Add(new Separator());
             }
 
-            if (_core?.AvailablePythonNodes != null && _core.AvailablePythonNodes.Count > 0)
+            if (_availableNodes != null && _availableNodes.Any())
             {
-                var pythonNodes = _core.AvailablePythonNodes;
+                var pythonNodes = _availableNodes;
                 var groupedPythonNodes = pythonNodes.GroupBy(n => n.Category);
 
                 foreach (var group in groupedPythonNodes)
@@ -559,7 +556,7 @@ namespace BayMax.UI.Controls
                     {
                         foreach (NodePin pin in node.Pins)
                         {
-                            NodeBlock startNode = _draftLine.StartPin.FindParent<NodeBlock>();
+                            NodeBlock startNode = GetNodeByPin(_draftLine.StartPin);
 
                             if (startNode != node && pin.Type == PinType.Input)
                             {
@@ -775,8 +772,27 @@ namespace BayMax.UI.Controls
 
         private void SpawnNode(NodeBlock node, Point? position = null)
         {
-            node.Moved += () => UpdateLinesForNode(node);
-            node.Resized += () => UpdateLinesForNode(node);
+            node.Moved += () => { UpdateLinesForNode(node); MarkAsDirty(); };
+            node.Resized += () => { UpdateLinesForNode(node); MarkAsDirty(); };
+
+            node.NodeSelected += SelectNode;
+            node.DeleteRequested += DeleteNode;
+            node.NodeModified += MarkAsDirty;
+            node.RightClicked += OnNodeRightClicked;
+
+            node.PinInteractionRequested += (n, pin) =>
+            {
+                if (pin.Type == PinType.Output) StartConnection(pin);
+                else RemoveConnection(pin);
+            };
+
+
+            if (node.Type == NodeType.Logic)
+            {
+                node.Settings.TryGetValue("_TargetDeviceIp", out string savedIp);
+                node.BindDevices(this.ProjectDevices, savedIp);
+            }
+
             Point finalPos = position ?? _rightClickPoint;
             Canvas.SetLeft(node, finalPos.X);
             Canvas.SetTop(node, finalPos.Y);
@@ -880,7 +896,7 @@ namespace BayMax.UI.Controls
         {
             foreach (var line in Connections)
             {
-                if (line.StartPin.FindParent<NodeBlock>() == node || line.EndPin.FindParent<NodeBlock>() == node)
+                if (GetNodeByPin(line.StartPin) == node || GetNodeByPin(line.EndPin) == node)
                 {
                     Point startPos = line.StartPin.PinDot.TranslatePoint(new Point(8, 8), DrawArea);
                     Point endPos = line.EndPin.PinDot.TranslatePoint(new Point(8, 8), DrawArea);
@@ -895,7 +911,7 @@ namespace BayMax.UI.Controls
             List<ConnectionLine> linesToRemove = new List<ConnectionLine>();
             foreach (var conn in Connections)
             {
-                if (conn.StartPin.FindParent<NodeBlock>() == node || conn.EndPin.FindParent<NodeBlock>() == node)
+                if (GetNodeByPin(conn.StartPin) == node || GetNodeByPin(conn.EndPin) == node)
                 {
                     linesToRemove.Add(conn);
                 }

@@ -154,7 +154,7 @@ namespace BayMax.Services
         public void Dispose()
         {
             _socket?.Dispose();
-            NetMQConfig.Cleanup();
+            //NetMQConfig.Cleanup();
         }
     }
 }

@@ -1,8 +1,8 @@
-﻿using BayMax.UI.Controls;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using BayMax.UI.Components;
 
 namespace BayMax.Nodes.UI
 {

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BayMax.Models;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -6,9 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
-using BayMax.Models;
 
-namespace BayMax.UI.Controls
+namespace BayMax.UI.Components
 {
 
     public enum NodeType
@@ -42,7 +42,15 @@ namespace BayMax.UI.Controls
         public Action OnSaveSettings { get; set; }
         public Action OnLoadSettings { get; set; }
 
-        public Models.Device TargetDevice { get; private set; }
+        public event Action<NodeBlock, bool> NodeSelected; // Передает саму ноду и флаг multiSelect
+        public event Action<NodeBlock> DeleteRequested;    // Просит родителя удалить эту ноду
+        public event Action NodeModified;
+        public event Action<NodeBlock, NodePin> PinInteractionRequested;
+        public event Action<NodeBlock> RightClicked;
+
+        public bool IsDeployedMode { get; private set; }
+
+        public Device TargetDevice { get; private set; }
         public bool IsSelected { get; private set; }
         private Brush _originalBorderBrush;
 
@@ -52,37 +60,22 @@ namespace BayMax.UI.Controls
 
             Type = type;
             SetupVisuals(title);
-
-            // === ФИКС 1: Ждем, пока нода не появится на конкретном холсте (вкладке) ===
-            this.Loaded += NodeBlock_Loaded;
         }
 
-        private void NodeBlock_Loaded(object sender, RoutedEventArgs e)
+        public void BindDevices(IEnumerable<Device> devices, string savedIp = null)
         {
-            // Отписываемся, чтобы логика не срабатывала повторно при перерисовках интерфейса
-            this.Loaded -= NodeBlock_Loaded;
+            if (Type != NodeType.Logic) return;
 
-            if (Type == NodeType.Logic)
+            DeviceSelector.ItemsSource = devices;
+
+            if (!string.IsNullOrEmpty(savedIp))
             {
-                // Ищем холст (вкладку), на котором находится эта нода
-                var canvas = this.FindParent<NodeCanvas>();
-                if (canvas != null)
-                {
-                    // Привязываем выпадающий список машин к списку ИМЕННО ЭТОЙ вкладки
-                    DeviceSelector.ItemsSource = canvas.ProjectDevices;
-
-                    // Восстанавливаем выбранную машину из сохранения
-                    if (Settings.TryGetValue("_TargetDeviceIp", out string savedIp))
-                    {
-                        var device = canvas.ProjectDevices.FirstOrDefault(d => d.Ip == savedIp);
-                        if (device != null) DeviceSelector.SelectedItem = device;
-                    }
-                    else if (canvas.ProjectDevices.Count > 0 && DeviceSelector.SelectedItem == null)
-                    {
-                        // Автовыбор первой машины, если ничего не сохранено
-                        DeviceSelector.SelectedIndex = 0;
-                    }
-                }
+                var device = devices.FirstOrDefault(d => d.Ip == savedIp);
+                if (device != null) DeviceSelector.SelectedItem = device;
+            }
+            else if (devices.Any())
+            {
+                DeviceSelector.SelectedIndex = 0;
             }
         }
 
@@ -169,7 +162,7 @@ namespace BayMax.UI.Controls
 
         private void DeviceSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            TargetDevice = DeviceSelector.SelectedItem as Models.Device;
+            TargetDevice = DeviceSelector.SelectedItem as Device;
 
             if (TargetDevice == null && Type == NodeType.Logic)
             {
@@ -182,9 +175,7 @@ namespace BayMax.UI.Controls
                 DeviceSelector.ToolTip = "Устройство для выполнения: " + TargetDevice?.Name;
             }
 
-            // === ФИКС 3: Если мы выбрали другого робота - помечаем проект как измененный ===
-            var canvas = this.FindParent<NodeCanvas>();
-            canvas?.MarkAsDirty();
+            NodeModified?.Invoke();
         }
 
         private void BringToFront()
@@ -213,6 +204,8 @@ namespace BayMax.UI.Controls
         {
             var newPin = new NodePin(title, pinType, dataType);
 
+            newPin.PinInteractionRequested += (pin) => PinInteractionRequested?.Invoke(this, pin);
+
             if (pinType == PinType.Input)
             {
                 InputPinsContainer.Children.Add(newPin);
@@ -226,30 +219,36 @@ namespace BayMax.UI.Controls
             return newPin;
         }
 
+        protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
+        {
+            base.OnMouseRightButtonDown(e);
+
+            if (IsDeployedMode) return;
+
+            RightClicked?.Invoke(this);
+
+            e.Handled = true;
+        }
+
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
             try
             {
                 base.OnMouseLeftButtonDown(e);
 
-                var canvas = this.FindParent<NodeCanvas>();
-
-                if (canvas != null && canvas.IsDeployed)
+                if (IsDeployedMode)
                 {
                     this.Focus();
                     BringToFront();
                     return;
                 }
 
-                if (canvas != null)
-                {
-                    bool isMultiSelect = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+                bool isMultiSelect = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) || Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
 
-                    canvas.SelectNode(this, isMultiSelect);
+                NodeSelected?.Invoke(this, isMultiSelect);
 
-                    BringToFront();
-                    this.Focus();
-                }
+                BringToFront();
+                this.Focus();
 
                 if (LockToggle.IsChecked != true)
                 {
@@ -305,12 +304,7 @@ namespace BayMax.UI.Controls
 
         private void DeleteNode_Click(object sender, RoutedEventArgs e)
         {
-            var canvas = this.FindParent<NodeCanvas>();
-            if (canvas != null)
-            {
-                canvas.DeleteNode(this);
-            }
-
+            DeleteRequested?.Invoke(this);
             e.Handled = true;
         }
 
@@ -328,6 +322,8 @@ namespace BayMax.UI.Controls
 
         public void SetDeployedMode(bool isDeployed)
         {
+            IsDeployedMode = isDeployed;
+
             LockToggle.IsChecked = isDeployed;
             LockToggle.IsEnabled = !isDeployed;
             DeleteBtn.IsEnabled = !isDeployed;
@@ -355,7 +351,7 @@ namespace BayMax.UI.Controls
             }
         }
 
-        public void RefreshStructure(Models.CustomPythonNode meta)
+        public void RefreshStructure(CustomPythonNode meta)
         {
             InputPinsContainer.Children.Clear();
             OutputPinsContainer.Children.Clear();

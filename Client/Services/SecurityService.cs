@@ -1,4 +1,6 @@
-﻿using NetMQ;
+﻿
+using BayMax.Utils;
+using NetMQ;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -34,14 +36,14 @@ namespace BayMax.Services
                             Convert.FromBase64String(keys[0]),
                             Convert.FromBase64String(keys[1])
                         );
-                        LoggerService.Log("Ключи безопасности загружены.", LogLevel.Success);
+                        LoggerService.Global.Log("Ключи безопасности загружены.", LogLevel.Success);
                         return;
                     }
                 }
                 catch {  }
             }
 
-            LoggerService.Log("Генерация новой пары ключей...", LogLevel.Info);
+            LoggerService.Global.Log("Генерация новой пары ключей...", LogLevel.Info);
             Certificate = new NetMQCertificate();
             File.WriteAllLines(_keyPath, new[] {
                 Convert.ToBase64String(Certificate.SecretKey),

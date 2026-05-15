@@ -1,5 +1,10 @@
-﻿using BayMax.Services;
+﻿using BayMax.Models;
+using BayMax.Services;
+using BayMax.Utils;
+using BayMax.Workspaces;
+using Microsoft.Win32;
 using NetMQ;
+using System;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -7,78 +12,209 @@ using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
-using System.Windows.Shapes;
-using BayMax.Models;
-using System.Windows.Media.Animation;
-using System;
+using System.IO;
 
-namespace BayMax
+namespace BayMax.Windows
 {
     public partial class MainWindow : Window
     {
-        public BayMaxCore Core;
+
+        public BayMaxCore Core { get; } = new BayMaxCore();
+        private ProjectWorkspace _activeWorkspace;
         private bool _isRefreshing = false;
 
         public MainWindow()
         {
             InitializeComponent();
-
             Nodes.NodeRegistry.Initialize();
-            Core = new BayMaxCore();
 
-            TopMenu.BindCore(Core);
+            TopMenu.NewProjectRequested += () => AddNewTab("Новый проект");
+            TopMenu.OpenProjectRequested += OpenProject;
+            TopMenu.SaveProjectRequested += SaveProject;
+            TopMenu.SaveAsProjectRequested += SaveAsProject;
+            TopMenu.DeployRequested += ToggleDeploy;
+            TopMenu.RefreshDevicesRequested += () => Core.RefreshDevices();
+            TopMenu.ToggleDeviceRequested += ToggleDevice;
 
-            AddNewTab("Новый проект");
+            Core.DevicesUpdated += UpdateTopMenu;
+            Core.OnDeviceDisconnected += HandleDeviceDisconnected;
+
+            LoggerService.Global.OnLog += HandleNewLog;
 
             this.Activated += MainWindow_Activated;
-            LoggerService.OnLog += HandleNewLog;
+
+            AddNewTab("Новый проект");
         }
 
         // ==========================================
-        // ГОРЯЧИЕ КЛАВИШИ
+        // ЛОГИКА ДИРИЖЕРА ПРОЕКТОВ (События меню)
         // ==========================================
-        private void Window_KeyDown(object sender, KeyEventArgs e)
+        private void SaveProject()
         {
-            if (Keyboard.Modifiers == ModifierKeys.Control)
+            if (_activeWorkspace == null) return;
+            if (string.IsNullOrEmpty(_activeWorkspace.FilePath)) SaveAsProject();
+            else _activeWorkspace.SaveToFile(_activeWorkspace.FilePath);
+        }
+
+        private void SaveAsProject()
+        {
+            if (_activeWorkspace == null) return;
+            var saveDialog = new SaveFileDialog { Filter = "BayMax Project (*.bmx)|*.bmx", FileName = "MyProject.bmx" };
+            if (saveDialog.ShowDialog() == true) _activeWorkspace.SaveToFile(saveDialog.FileName);
+        }
+
+        private void OpenProject()
+        {
+            var openDialog = new OpenFileDialog { Filter = "BayMax Project (*.bmx)|*.bmx" };
+            if (openDialog.ShowDialog() == true)
             {
-                if (e.Key == Key.N) { TopMenu.NewProject_Click(null, null); e.Handled = true; }
-                else if (e.Key == Key.O) { TopMenu.OpenProject_Click(null, null); e.Handled = true; }
-                else if (e.Key == Key.S) { TopMenu.SaveProject_Click(null, null); e.Handled = true; }
+                if (FocusTabByFilePath(openDialog.FileName)) return;
+                var workspace = AddNewTab(Path.GetFileName(openDialog.FileName));
+                workspace.LoadFromFile(openDialog.FileName);
             }
+        }
+
+        private async void ToggleDeploy()
+        {
+            if (_activeWorkspace == null) return;
+            TopMenu.DeployButton.IsEnabled = false;
+
+            try
+            {
+                if (!_activeWorkspace.IsDeployed)
+                    await _activeWorkspace.DeployAsync();
+                else
+                    await _activeWorkspace.StopDeployAsync(Core);
+            }
+            finally
+            {
+                TopMenu.DeployButton.IsEnabled = true;
+                UpdateTopMenu();
+            }
+        }
+
+        private async void ToggleDevice(Device device)
+        {
+            if (_activeWorkspace == null) return;
+
+            if (!device.IsInProject)
+            {
+                var status = await Core.CheckAutorizationAsync(device);
+                if (status != ConnectionStatus.Offline)
+                {
+                    device.IsInProject = true;
+                    if (!_activeWorkspace.ProjectDevices.Contains(device)) _activeWorkspace.ProjectDevices.Add(device);
+                }
+                else
+                {
+                    MessageBox.Show("Устройство оффлайн.", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Core.DeviceOffline(device);
+                }
+            }
+            else
+            {
+                device.IsInProject = false;
+                _activeWorkspace.ProjectDevices.Remove(device);
+            }
+            UpdateTopMenu();
+        }
+
+        private void HandleDeviceDisconnected(Device device)
+        {
+            Application.Current.Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                bool wasActiveStopped = false;
+                foreach (TabItem tab in ProjectTabs.Items)
+                {
+                    if (tab.Content is ProjectWorkspace workspace && workspace.IsDeployed && workspace.ProjectDevices.Contains(device))
+                    {
+                        await workspace.StopDeployAsync(Core);
+                        if (workspace == _activeWorkspace) wasActiveStopped = true;
+                    }
+                }
+                if (wasActiveStopped)
+                {
+                    MessageBox.Show($"Связь с агентом \"{device.Name}\" была потеряна!\nДеплой остановлен.", "Обрыв связи", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    UpdateTopMenu();
+                }
+            }));
         }
 
         // ==========================================
         // УПРАВЛЕНИЕ ВКЛАДКАМИ
         // ==========================================
-        public void AddNewTab(string title = "Новый проект")
+        public ProjectWorkspace AddNewTab(string title = "Новый проект")
         {
-            var newCanvas = new UI.Controls.NodeCanvas();
-            newCanvas.BindCore(Core);
+            var workspace = new ProjectWorkspace();
+            workspace.BindCore(Core);
 
-            newCanvas.IsDirtyChanged += () =>
+            workspace.StateChanged += () =>
             {
-                string currentTitle = string.IsNullOrEmpty(newCanvas.FilePath) ? "Новый проект" : System.IO.Path.GetFileName(newCanvas.FilePath);
-                UpdateActiveTabTitle(currentTitle);
+                string currentTitle = string.IsNullOrEmpty(workspace.FilePath) ? "Новый проект" : System.IO.Path.GetFileName(workspace.FilePath);
+                UpdateActiveTabTitle(workspace, currentTitle);
+                UpdateTopMenu();
             };
 
             var tab = new TabItem
             {
                 Header = title,
-                Content = newCanvas
+                Content = workspace
             };
 
             ProjectTabs.Items.Add(tab);
             ProjectTabs.SelectedItem = tab;
+
+            return workspace;
+        }
+
+        private void ProjectTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (e.OriginalSource != ProjectTabs) return;
+
+            if (_activeWorkspace != null) _activeWorkspace.Logger.OnLog -= HandleNewLog;
+
+            if (ProjectTabs.SelectedItem is TabItem selectedTab && selectedTab.Content is ProjectWorkspace workspace)
+            {
+                _activeWorkspace = workspace;
+                UpdateTopMenu();
+
+                _activeWorkspace.Logger.OnLog += HandleNewLog;
+            }
+            else
+            {
+                _activeWorkspace = null;
+            }
+
+            RefreshConsoleFromHistory();
+        }
+        private void UpdateTopMenu()
+        {
+            if (_activeWorkspace != null)
+            {
+                TopMenu.UpdateState(_activeWorkspace.IsDeployed, Core.AvailableDevices, _activeWorkspace.ProjectDevices);
+            }
+        }
+
+        public void UpdateActiveTabTitle(ProjectWorkspace workspace, string title)
+        {
+            foreach (TabItem tab in ProjectTabs.Items)
+            {
+                if (tab.Content == workspace)
+                {
+                    tab.Header = title + (workspace.IsDirty ? "*" : "");
+                    break;
+                }
+            }
         }
 
         public bool FocusTabByFilePath(string filePath)
         {
             foreach (TabItem tab in ProjectTabs.Items)
             {
-                if (tab.Content is UI.Controls.NodeCanvas canvas &&
-                    string.Equals(canvas.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
+                if (tab.Content is ProjectWorkspace workspace && string.Equals(workspace.FilePath, filePath, StringComparison.OrdinalIgnoreCase))
                 {
                     ProjectTabs.SelectedItem = tab;
                     return true;
@@ -91,96 +227,83 @@ namespace BayMax
         {
             e.Handled = true;
 
-            var btn = sender as Button;
-            var tab = btn?.Tag as TabItem;
+            var tab = (sender as Button)?.Tag as TabItem;
 
-            if (tab != null && tab.Content is UI.Controls.NodeCanvas canvas)
+            if (tab?.Content is ProjectWorkspace workspace)
             {
                 var previouslySelected = ProjectTabs.SelectedItem as TabItem;
 
-                if (canvas.IsDirty)
+                if (workspace.IsDirty)
                 {
                     ProjectTabs.SelectedItem = tab;
-
                     string projectName = tab.Header.ToString().TrimEnd('*');
-                    var result = MessageBox.Show($"В проекте \"{projectName}\" есть несохраненные изменения. Сохранить перед закрытием?",
-                                                 "Сохранение", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+                    var result = MessageBox.Show($"Сохранить изменения в \"{projectName}\"?", "Сохранение", MessageBoxButton.YesNoCancel, MessageBoxImage.Warning);
+
                     if (result == MessageBoxResult.Cancel) return;
                     if (result == MessageBoxResult.Yes)
                     {
-                        TopMenu.SaveProject_Click(null, null);
-                        if (canvas.IsDirty) return;
+                        SaveProject();
+                        if (workspace.IsDirty) return;
                     }
+                }
+
+                if (_activeWorkspace == workspace)
+                {
+                    _activeWorkspace.Logger.OnLog -= HandleNewLog;
+                    _activeWorkspace = null;
+                    RefreshConsoleFromHistory();
                 }
 
                 ProjectTabs.Items.Remove(tab);
 
                 if (previouslySelected != null && previouslySelected != tab && ProjectTabs.Items.Contains(previouslySelected))
-                {
                     ProjectTabs.SelectedItem = previouslySelected;
-                }
-
-                if (ProjectTabs.Items.Count == 0)
-                {
-                    TopMenu.BindCanvas(null);
-                }
-            }
-        }
-
-        private void ProjectTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (ProjectTabs.SelectedItem is TabItem selectedTab && selectedTab.Content is UI.Controls.NodeCanvas activeCanvas)
-            {
-                TopMenu.BindCanvas(activeCanvas);
-            }
-        }
-
-        public void UpdateActiveTabTitle(string title)
-        {
-            if (ProjectTabs.SelectedItem is TabItem selectedTab && selectedTab.Content is UI.Controls.NodeCanvas activeCanvas)
-            {
-                selectedTab.Header = title + (activeCanvas.IsDirty ? "*" : "");
             }
         }
 
         // ==========================================
-        // ОБНОВЛЕНИЕ НОД ПРИ ВОЗВРАТЕ В ОКНО
+        // ЛОГИРОВАНИЕ
+        // ==========================================
+        private void HandleNewLog(LogMessage log)
+        {
+            Application.Current.Dispatcher.BeginInvoke(new Action(() => AppendLogToConsole(log)));
+        }
+
+        private void AppendLogToConsole(LogMessage log)
+        {
+            string time = log.Time.ToString("HH:mm:ss");
+            ConsoleOutput.AppendText($"[{time}] [{log.Level.ToString().ToUpper()}] {log.Message}\n");
+            ConsoleOutput.ScrollToEnd();
+        }
+
+        // ==========================================
+        // ПРОЧЕЕ (Горячие клавиши, Консоль, Обновление нод)
         // ==========================================
         private async void MainWindow_Activated(object sender, EventArgs e)
         {
-            // Получаем текущий активный холст
-            UI.Controls.NodeCanvas activeCanvas = null;
-            if (ProjectTabs?.SelectedItem is TabItem selectedTab)
-            {
-                activeCanvas = selectedTab.Content as UI.Controls.NodeCanvas;
-            }
-
-            if (_isRefreshing || (activeCanvas != null && activeCanvas.IsDeployed)) return;
+            if (_isRefreshing || (_activeWorkspace != null && _activeWorkspace.IsDeployed)) return;
 
             try
             {
                 _isRefreshing = true;
-
                 bool wasUpdated = await Core.AutoRefreshPythonNodesAsync();
-
-                if (wasUpdated && ProjectTabs != null)
+                if (wasUpdated)
                 {
                     foreach (TabItem tab in ProjectTabs.Items)
-                    {
-                        if (tab.Content is UI.Controls.NodeCanvas canvas)
-                        {
-                            canvas.SyncLogicNodes();
-                        }
-                    }
+                        if (tab.Content is ProjectWorkspace workspace) workspace.Editor.SyncLogicNodes();
                 }
             }
-            catch (Exception ex)
+            catch { }
+            finally { _isRefreshing = false; }
+        }
+
+        private void Window_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Control)
             {
-                // Игнорируем или логируем
-            }
-            finally
-            {
-                _isRefreshing = false;
+                if (e.Key == Key.N) { AddNewTab("Новый проект"); e.Handled = true; }
+                else if (e.Key == Key.O) { OpenProject(); e.Handled = true; }
+                else if (e.Key == Key.S) { SaveProject(); e.Handled = true; }
             }
         }
 
@@ -282,16 +405,23 @@ namespace BayMax
             this.BeginAnimation(ConsoleHeightProperty, anim);
         }
 
-        private void HandleNewLog(string message, LogLevel level)
+        private void RefreshConsoleFromHistory()
         {
-            Application.Current.Dispatcher.Invoke(() =>
+            ConsoleOutput.Clear();
+
+            var combinedLogs = new List<LogMessage>();
+
+            combinedLogs.AddRange(LoggerService.Global.History);
+
+            if (_activeWorkspace != null)
             {
-                string time = DateTime.Now.ToString("HH:mm:ss");
+                combinedLogs.AddRange(_activeWorkspace.Logger.History);
+            }
 
-                ConsoleOutput.AppendText($"[{time}] {message}\n");
-
-                ConsoleOutput.ScrollToEnd();
-            });
+            foreach (var log in combinedLogs.OrderBy(l => l.Time))
+            {
+                AppendLogToConsole(log);
+            }
         }
 
         protected override void OnClosed(EventArgs e)

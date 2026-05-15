@@ -8,26 +8,23 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
-namespace BayMax.UI.Controls
+namespace BayMax.UI.Components
 {
     public partial class NodePin : UserControl
     {
         public PinType Type { get; private set; }
         public PinDataType DataType { get; private set; }
         public string Title { get; private set; }
-
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
-
-        public NodeBlock ParentNode => this.FindParent<NodeBlock>();
 
         public int ConnectionCount { get; private set; } = 0;
         public Ellipse PinDot => PinCircle;
-
         public object DataValue { get; private set; }
+        public string NetworkAddress { get; set; }
 
         public event Action<object> ValueChanged;
+        public event Action<NodePin> PinInteractionRequested;
 
-        public string NetworkAddress { get; set; }
 
 
         public NodePin(string title, PinType type, PinDataType dataType = PinDataType.Any)
@@ -53,10 +50,14 @@ namespace BayMax.UI.Controls
             }
 
             PinTitle.Text = Title;
-
             UpdateVisuals();
-
             UpdateTooltip(false);
+        }
+
+        private void PinCircle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            PinInteractionRequested?.Invoke(this);
+            e.Handled = true;
         }
 
         public void UpdateTooltip(bool isDeployed = false)
@@ -130,29 +131,6 @@ namespace BayMax.UI.Controls
         {
             DataValue = newValue;
             ValueChanged?.Invoke(newValue);
-        }
-        
-        private void PinCircle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            var parent = VisualTreeHelper.GetParent(this);
-            while (parent != null && !(parent is NodeCanvas))
-            {
-                parent = VisualTreeHelper.GetParent(parent);
-            }
-
-            if (parent is NodeCanvas canvas)
-            {
-                if (Type == PinType.Output)
-                {
-                    canvas.StartConnection(this);
-                }
-                else if (Type == PinType.Input)
-                {
-                    canvas.RemoveConnection(this);
-                }
-
-                e.Handled = true;
-            }
         }
     }
 }

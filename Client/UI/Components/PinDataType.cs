@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Windows.Media;
 
-namespace BayMax.UI.Controls
+namespace BayMax.UI.Components
 {
 
     public enum PinDataType

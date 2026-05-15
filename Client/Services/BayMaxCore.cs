@@ -1,12 +1,17 @@
-﻿using System.Windows;
+﻿using BayMax.Core;
+using BayMax.Models;
+using BayMax.UI.Components;
+using BayMax.Utils;
+using BayMax.Workspaces;
+using NetMQ;
 using System.Collections.Generic;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text;
 using System.Text.Json;
 using System.Web;
+using System.Windows;
 using System.Xml.Serialization;
-using BayMax.Models;
 
 namespace BayMax.Services
 {
@@ -16,6 +21,7 @@ namespace BayMax.Services
         private readonly DiscoveryService _discovery;
         private readonly NodeManager _nodeManager;
         private readonly NetBridge _netBridge;
+        private readonly GraphCompiler _compiler;
 
         private readonly Dictionary<string, BayMaxConnection> _connections = new Dictionary<string, BayMaxConnection>();
 
@@ -26,6 +32,7 @@ namespace BayMax.Services
         public List<CustomPythonNode> AvailablePythonNodes => _nodeManager.AvailableNodes;
 
         public event Action DevicesUpdated;
+        public event Action<Device> OnDeviceDisconnected;
 
         //public event Action<string> OnDeviceReady;   
 
@@ -35,6 +42,7 @@ namespace BayMax.Services
             _discovery = new DiscoveryService();
             _netBridge = new NetBridge();
             _nodeManager = new NodeManager();
+            _compiler = new GraphCompiler();
 
             RefreshPythonNodesAsync();
 
@@ -43,6 +51,183 @@ namespace BayMax.Services
 
             //Task.Run(StartHeartbeatMonitor);
         }
+
+
+        public async Task<bool> DeployProjectAsync(NodeCanvas canvas)
+        {
+            try
+            {
+                await RefreshPythonNodesAsync();
+
+                _compiler.ValidateGraph(canvas);
+                var groupedByDevice = _compiler.GroupNodesByDevice(canvas);
+
+                foreach (var device in groupedByDevice.Keys)
+                {
+                    var status = await CheckAutorizationAsync(device);
+                    if (status == ConnectionStatus.Offline)
+                    {
+                        MessageBox.Show($"Устройство {device.Name} ({device.Ip}) недоступно (Offline).\n\nДеплой отменен.", "Ошибка сети", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return false;
+                    }
+                    else if (status == ConnectionStatus.Unauthorized)
+                    {
+                        MessageBox.Show($"Нет доступа к устройству {device.Name} ({device.Ip}). Проверьте авторизацию.\n\nДеплой отменен.", "Ошибка доступа", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return false;
+                    }
+                }
+
+                StartNetBridge();
+
+                bool allSuccess = true;
+                var globalLogicPublishers = new Dictionary<string, string>();
+
+                foreach (var group in groupedByDevice)
+                {
+                    Device targetDevice = group.Key;
+                    var deviceNodes = group.Value;
+                    string localIp = GetLocalIPAddress(targetDevice.Ip);
+
+                    // 3.1. Синхронизируем скрипты нод
+                    var requiredTypes = _compiler.GetRequiredNodeTypes(deviceNodes);
+                    var nodesMetadataPayload = new Dictionary<string, long>();
+
+                    foreach (var typeName in requiredTypes)
+                    {
+                        var meta = AvailablePythonNodes.FirstOrDefault(m => m.Name == typeName);
+                        if (meta != null) nodesMetadataPayload[typeName] = meta.LastModifiedTimestamp;
+                    }
+
+                    var checkRes = await CheckNodesAsync(targetDevice, nodesMetadataPayload);
+
+                    if (checkRes.TryGetProperty("type", out var resType) && resType.GetString() == "missing_nodes")
+                    {
+                        foreach (var missing in checkRes.GetProperty("nodes").EnumerateArray())
+                        {
+                            string mName = missing.GetString();
+                            var meta = AvailablePythonNodes.FirstOrDefault(n => n.Name == mName);
+                            if (meta != null && !string.IsNullOrEmpty(meta.SourceCode))
+                            {
+                                if (!await UploadNodeAsync(targetDevice, meta.Name, meta.SourceCode))
+                                    return false;
+                            }
+                        }
+                    }
+
+                    // 3.2. Резервируем порты на агенте
+                    var deviceOutputPins = _compiler.GetOutputPins(deviceNodes);
+                    var outPinPorts = new Dictionary<string, int>();
+                    var outPinAddresses = new Dictionary<string, string>();
+
+                    if (deviceOutputPins.Count > 0)
+                    {
+                        List<int> freePorts = await GetAvailablePortsAsync(targetDevice, deviceOutputPins.Count);
+                        if (freePorts == null || freePorts.Count < deviceOutputPins.Count) return false;
+
+                        for (int i = 0; i < deviceOutputPins.Count; i++)
+                        {
+                            outPinPorts[deviceOutputPins[i].Id] = freePorts[i];
+                            string addr = $"tcp://{targetDevice.Ip}:{freePorts[i]}";
+
+                            outPinAddresses[deviceOutputPins[i].Id] = addr;
+                            globalLogicPublishers[deviceOutputPins[i].Id] = addr;
+
+                            deviceOutputPins[i].NetworkAddress = addr;
+                            deviceOutputPins[i].UpdateTooltip(true);
+                        }
+                    }
+
+                    // 3.3. Собираем финальный Payload через компилятор
+                    var deployPayload = _compiler.BuildDeployPayload(
+                        deviceNodes, canvas, AppPublicKey, localIp,
+                        outPinPorts, outPinAddresses,
+                        pinId => GetBridgePort(pinId),
+                        AvailablePythonNodes);
+
+                    // 3.4. Отправляем на деплой
+                    if (!await DeployAsync(targetDevice, deployPayload)) allSuccess = false;
+                }
+
+                // 4. Запускаем локальные UI связи
+                if (allSuccess)
+                {
+                    ActivateUIConnections(canvas, globalLogicPublishers);
+                }
+
+                return allSuccess;
+
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Ошибка сборки графа: {ex.Message}", "Сбой компилятора", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+
+        private void ActivateUIConnections(NodeCanvas canvas, Dictionary<string, string> logicPubs)
+        {
+            var handledPins = new HashSet<string>();
+
+            foreach (var conn in canvas.Connections)
+            {
+                var startNode = canvas.GetNodeByPin(conn.StartPin);
+                var endNode = canvas.GetNodeByPin(conn.EndPin);
+
+                if (startNode.Type == NodeType.UI && endNode.Type == NodeType.Logic)
+                {
+                    if (!handledPins.Contains(conn.StartPin.Id))
+                    {
+                        handledPins.Add(conn.StartPin.Id);
+
+                        conn.StartPin.ValueChanged += (val) =>
+                        {
+                            if (canvas.IsDeployed && val != null)
+                                SendBridgeData(conn.StartPin.Id, val.ToString());
+                        };
+
+                        if (conn.StartPin.DataValue != null)
+                        {
+                            Task.Run(async () =>
+                            {
+                                await Task.Delay(500);
+                                if (canvas.IsDeployed)
+                                    SendBridgeData(conn.StartPin.Id, conn.StartPin.DataValue.ToString());
+                            });
+                        }
+                    }
+                }
+
+                if (startNode.Type == NodeType.Logic && endNode.Type == NodeType.UI)
+                {
+                    if (logicPubs.TryGetValue(conn.StartPin.Id, out var address))
+                    {
+                        conn.EndPin.NetworkAddress = address;
+                        conn.EndPin.UpdateTooltip(true);
+
+                        ConnectBridgeToAgent(conn.EndPin.Id, address, (msg) =>
+                        {
+                            conn.EndPin.SetValue(msg);
+                        });
+                    }
+                }
+            }
+        }
+
+        private string GetLocalIPAddress(string targetIp)
+        {
+            try
+            {
+                if (targetIp == "127.0.0.1") return "127.0.0.1";
+
+                using (System.Net.Sockets.Socket socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Dgram, 0))
+                {
+                    socket.Connect(targetIp, 65530);
+                    return (socket.LocalEndPoint as System.Net.IPEndPoint).Address.ToString();
+                }
+            }
+            catch { return "127.0.0.1"; }
+        }
+
 
 
         public async Task<bool> AutoRefreshPythonNodesAsync()
@@ -161,7 +346,6 @@ namespace BayMax.Services
                     }
                     else
                     {
-                        LoggerService.Log("Online");
                         existingUI.IsOnline = true;
                         existingUI.IsAuthorized = (status == ConnectionStatus.Authorized);
                     }
@@ -173,7 +357,6 @@ namespace BayMax.Services
 
         public void DeviceOffline(Device device)
         {
-            LoggerService.Log("Offline");
             DisconnectDevice(device.Ip);
             device.IsOnline = false;
             device.IsAuthorized = false;
@@ -182,6 +365,8 @@ namespace BayMax.Services
             {
                 AvailableDevices.Remove(device);
             }
+
+            OnDeviceDisconnected?.Invoke(device);
         }
 
         public async Task<ConnectionStatus> CheckAutorizationAsync(Device device)
@@ -209,7 +394,7 @@ namespace BayMax.Services
                 }
                 catch (Exception ex)
                 {
-                    LoggerService.Log($"Ошибка авторизации с {device.Ip}: {ex.Message}", LogLevel.Error);
+                    LoggerService.Global.Log($"Ошибка авторизации с {device.Ip}: {ex.Message}", LogLevel.Error);
                     return false;
                 }
             });
@@ -267,7 +452,7 @@ namespace BayMax.Services
 
         public async Task StopProjectAsync(IEnumerable<Device> targetDevices)
         {
-            StopNetBridge();
+            await Task.Run(() => StopNetBridge());
 
             var stopTasks = new List<Task>();
 
@@ -296,7 +481,14 @@ namespace BayMax.Services
             _discovery.Stop();
             foreach (var conn in _connections.Values) conn.Dispose();
             _connections.Clear();
+
+            NetMQConfig.Cleanup();
         }
+
+        //internal async Task CheckNodesAsync(Device targetDevice, Dictionary<string, long> nodesMetadataPayload)
+        //{
+        //    throw new NotImplementedException();
+        //}
 
         //private void OnAgentDiscovered(DiscoveryService.AgentBeacon beacon, string ip)
         //{

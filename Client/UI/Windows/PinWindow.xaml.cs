@@ -1,6 +1,6 @@
 ﻿using System.Windows;
 
-namespace BayMax
+namespace BayMax.Windows
 {
     public partial class PinWindow : Window
     {

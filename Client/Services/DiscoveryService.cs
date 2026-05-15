@@ -1,4 +1,4 @@
-﻿using BayMax.Services;
+﻿using BayMax.Utils;
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -41,7 +41,7 @@ namespace BayMax.Services
             Stop();
             _cts = new CancellationTokenSource();
             Task.Run(() => ScanLoop(intervalSeconds, _cts.Token));
-            LoggerService.Log($"[РАДАР] Запущен. Интервал: {intervalSeconds} сек.", LogLevel.Info);
+            LoggerService.Global.Log($"[РАДАР] Запущен. Интервал: {intervalSeconds} сек.", LogLevel.Info);
         }
 
         public void Stop()
